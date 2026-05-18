@@ -14,3 +14,14 @@
   - Mute/skip/always skip (whatever we decide to call it)
   - Any other options that belong
 - [x] Reserve space at the top of the main pane for a future toolbar. This also prevents the scrollbar from going to the very top of the window.
+- [x] Disable text selection
+- [x] Review these depencies: all four (inflight@1, rimraf@2, glob@7, boolean@3) are transitive devDeps of electron-builder (latest), never shipped at runtime. Upstream fix only.
+  - npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+  - npm warn deprecated rimraf@2.6.3: Rimraf versions prior to v4 are no longer supported
+  - npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+  - npm warn deprecated boolean@3.2.0: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+
+- [ ] New folder UX:
+  - Click new folder button
+  - New untitled folder appears in sidebar with text highlighted to type
+  - User hits return and the folder is committed

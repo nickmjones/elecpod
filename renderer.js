@@ -10,7 +10,9 @@ const state = {
   podcastSort: 'newest',
   discoverCache: null,
   blacklistDefaults: [],
-  selection: { context: null, indices: new Set(), anchor: null }
+  selection: { context: null, indices: new Set(), anchor: null },
+  folderEdit: null,
+  playlistEdit: null
 }
 
 const PODCAST_SORTS = [
@@ -66,7 +68,6 @@ const els = {
   playlistsList: document.getElementById('playlists-list'),
   newFolder: document.getElementById('new-folder-btn'),
   newPlaylist: document.getElementById('new-playlist-btn'),
-  addUrl: document.getElementById('add-url-btn'),
   refresh: document.getElementById('refresh-btn'),
   view: document.getElementById('view'),
   audio: document.getElementById('audio'),
@@ -472,28 +473,150 @@ function renderSidebar () {
     el.classList.toggle('active', el.dataset.view === v.kind)
   })
 
-  els.foldersList.innerHTML = state.store.folders.map(f => `
+  els.foldersList.innerHTML = state.store.folders.map(f => {
+    if (state.folderEdit && state.folderEdit.id === f.id) {
+      return `
+    <div class="nav-row" data-folder="${f.id}" data-editing="true">
+      <span class="mi row-icon">folder</span>
+      <input class="row-edit" type="text" value="${escapeHtml(f.name)}" />
+    </div>
+      `
+    }
+    return `
     <div class="nav-row${v.kind === 'folder' && v.folderId === f.id ? ' active' : ''}" data-folder="${f.id}">
       <span class="mi row-icon">folder</span>
       <span class="row-label">${escapeHtml(f.name)}</span>
-      <span class="row-actions">
-        ${btn({ icon: 'edit', iconOnly: true, size: 'sm', variant: 'ghost', title: 'Rename', 'data-act': 'rename-folder', 'data-id': f.id })}
-        ${btn({ icon: 'close', iconOnly: true, size: 'sm', variant: 'ghost', title: 'Delete', 'data-act': 'delete-folder', 'data-id': f.id })}
-      </span>
     </div>
-  `).join('') || '<div class="muted-empty">No folders</div>'
+    `
+  }).join('') || '<div class="muted-empty">No folders</div>'
 
-  els.playlistsList.innerHTML = state.store.playlists.map(p => `
+  els.playlistsList.innerHTML = state.store.playlists.map(p => {
+    if (state.playlistEdit && state.playlistEdit.id === p.id) {
+      return `
+    <div class="nav-row" data-playlist="${p.id}" data-editing="true">
+      <span class="mi row-icon">playlist_play</span>
+      <input class="row-edit" type="text" value="${escapeHtml(p.name)}" />
+    </div>
+      `
+    }
+    return `
     <div class="nav-row${v.kind === 'playlist' && v.playlistId === p.id ? ' active' : ''}" data-playlist="${p.id}">
       <span class="mi row-icon">playlist_play</span>
       <span class="row-label">${escapeHtml(p.name)}</span>
       <span class="row-pill" title="${p.items.length} episode${p.items.length === 1 ? '' : 's'}">${p.items.length}</span>
-      <span class="row-actions">
-        ${btn({ icon: 'edit', iconOnly: true, size: 'sm', variant: 'ghost', title: 'Rename', 'data-act': 'rename-playlist', 'data-id': p.id })}
-        ${btn({ icon: 'close', iconOnly: true, size: 'sm', variant: 'ghost', title: 'Delete', 'data-act': 'delete-playlist', 'data-id': p.id })}
-      </span>
     </div>
-  `).join('') || '<div class="muted-empty">No playlists</div>'
+    `
+  }).join('') || '<div class="muted-empty">No playlists</div>'
+}
+
+function focusFolderEditInput () {
+  const input = els.foldersList.querySelector('.row-edit')
+  if (input) { input.focus(); input.select() }
+}
+
+function startNewFolder () {
+  const f = { id: uid(), name: '' }
+  state.store.folders.push(f)
+  state.folderEdit = { id: f.id, originalName: '' }
+  renderSidebar()
+  focusFolderEditInput()
+}
+
+function startRenameFolder (id) {
+  const f = state.store.folders.find(x => x.id === id)
+  if (!f) return
+  state.folderEdit = { id, originalName: f.name }
+  renderSidebar()
+  focusFolderEditInput()
+}
+
+async function commitFolderEdit (value) {
+  if (!state.folderEdit) return
+  const { id, originalName } = state.folderEdit
+  const name = value.trim()
+  state.folderEdit = null
+  const f = state.store.folders.find(x => x.id === id)
+  if (!f) return
+  if (!name) {
+    if (!originalName) {
+      state.store.folders = state.store.folders.filter(x => x.id !== id)
+      await persist()
+    } else {
+      renderSidebar()
+    }
+    return
+  }
+  if (name === originalName) { renderSidebar(); return }
+  f.name = name
+  await persist()
+}
+
+async function cancelFolderEdit () {
+  if (!state.folderEdit) return
+  const { id, originalName } = state.folderEdit
+  state.folderEdit = null
+  if (!originalName) {
+    state.store.folders = state.store.folders.filter(x => x.id !== id)
+    await persist()
+  } else {
+    renderSidebar()
+  }
+}
+
+function focusPlaylistEditInput () {
+  const input = els.playlistsList.querySelector('.row-edit')
+  if (input) { input.focus(); input.select() }
+}
+
+function startNewPlaylist () {
+  const p = { id: uid(), name: '', items: [] }
+  state.store.playlists.push(p)
+  state.playlistEdit = { id: p.id, originalName: '' }
+  renderSidebar()
+  focusPlaylistEditInput()
+}
+
+function startRenamePlaylist (id) {
+  const p = state.store.playlists.find(x => x.id === id)
+  if (!p) return
+  state.playlistEdit = { id, originalName: p.name }
+  renderSidebar()
+  focusPlaylistEditInput()
+}
+
+async function commitPlaylistEdit (value) {
+  if (!state.playlistEdit) return
+  const { id, originalName } = state.playlistEdit
+  const name = value.trim()
+  state.playlistEdit = null
+  const p = state.store.playlists.find(x => x.id === id)
+  if (!p) return
+  if (!name) {
+    if (!originalName) {
+      state.store.playlists = state.store.playlists.filter(x => x.id !== id)
+      await persist()
+    } else {
+      renderSidebar()
+    }
+    return
+  }
+  const wasNew = !originalName
+  if (name === originalName) { renderSidebar(); return }
+  p.name = name
+  await persist()
+  if (wasNew) setView({ kind: 'playlist', playlistId: id })
+}
+
+async function cancelPlaylistEdit () {
+  if (!state.playlistEdit) return
+  const { id, originalName } = state.playlistEdit
+  state.playlistEdit = null
+  if (!originalName) {
+    state.store.playlists = state.store.playlists.filter(x => x.id !== id)
+    await persist()
+  } else {
+    renderSidebar()
+  }
 }
 
 // ------- Views -------
@@ -523,6 +646,17 @@ function renderView () {
   }
 }
 
+function lastUpdated (feedUrl) {
+  const cached = state.episodeCache.get(feedUrl)
+  if (!cached || !cached.episodes?.length) return ''
+  let max = 0
+  for (const ep of cached.episodes) {
+    const t = ep.pubDate ? new Date(ep.pubDate).getTime() : 0
+    if (t > max) max = t
+  }
+  return max ? fmtDate(max) : ''
+}
+
 function renderPodcastsGallery (subs, title) {
   if (!subs.length) {
     els.view.innerHTML = `
@@ -534,13 +668,17 @@ function renderPodcastsGallery (subs, title) {
   els.view.innerHTML = `
     <div class="view-header"><h1>${escapeHtml(title)}</h1></div>
     <div class="gallery">
-      ${subs.map(s => `
+      ${subs.map(s => {
+        const updated = lastUpdated(s.feedUrl)
+        return `
         <div class="gallery-card" draggable="true" data-drag="sub" data-feed="${escapeHtml(s.feedUrl)}">
           ${btn({ icon: 'more_horiz', iconOnly: true, variant: 'ghost', title: 'More', extraClass: 'card-kebab', 'data-act': 'card-menu', 'data-feed': s.feedUrl })}
           <img src="${escapeHtml(s.imageUrl || '')}" alt="" />
           <div class="title">${escapeHtml(s.title)}</div>
+          ${updated ? `<div class="updated">Updated ${escapeHtml(updated)}</div>` : ''}
         </div>
-      `).join('')}
+        `
+      }).join('')}
     </div>
   `
 }
@@ -1206,7 +1344,7 @@ async function refreshAll () {
     }
   } finally {
     state.refreshing = false
-    if (state.view.kind === 'incoming') renderView()
+    if (state.view.kind === 'incoming' || state.view.kind === 'podcasts' || state.view.kind === 'folder') renderView()
   }
 }
 
@@ -1486,6 +1624,30 @@ async function addEpisodeToPlaylistFlow (item) {
 
 // ------- Event wiring -------
 
+const isUrlish = s => /^https?:\/\//i.test(s)
+
+async function ingestFeedUrl (url) {
+  setView({ kind: 'loading' })
+  try {
+    const feed = await window.api.fetchFeed(url)
+    const canonical = feed.feedUrl || url
+    state.episodeCache.set(canonical, { fetchedAt: Date.now(), ...feed })
+    if (!state.store.subscriptions.some(s => s.feedUrl === canonical)) {
+      state.store.subscriptions.push({
+        feedUrl: canonical,
+        title: feed.title || canonical,
+        imageUrl: feed.imageUrl,
+        folderId: null
+      })
+      await persist()
+    }
+    els.search.value = ''
+    setView({ kind: 'podcast', feedUrl: canonical, feed })
+  } catch (err) {
+    setView({ kind: 'error', message: `Could not load feed: ${err.message}` })
+  }
+}
+
 els.search.addEventListener('input', e => {
   const term = e.target.value.trim()
   clearTimeout(state.searchDebounce)
@@ -1493,6 +1655,7 @@ els.search.addEventListener('input', e => {
     setView({ kind: 'podcasts' })
     return
   }
+  if (isUrlish(term)) return
   state.searchDebounce = setTimeout(async () => {
     setView({ kind: 'loading' })
     try {
@@ -1502,6 +1665,14 @@ els.search.addEventListener('input', e => {
       setView({ kind: 'error', message: err.message })
     }
   }, 350)
+})
+
+els.search.addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return
+  const term = e.target.value.trim()
+  if (!isUrlish(term)) return
+  clearTimeout(state.searchDebounce)
+  ingestFeedUrl(term)
 })
 
 els.nav.addEventListener('click', async (e) => {
@@ -1514,35 +1685,6 @@ els.nav.addEventListener('click', async (e) => {
   if (e.target === els.refresh) {
     e.stopPropagation()
     await refreshAll()
-    return
-  }
-  const actBtn = e.target.closest('button[data-act]')
-  if (actBtn) {
-    e.stopPropagation()
-    const id = actBtn.dataset.id
-    const act = actBtn.dataset.act
-    if (act === 'rename-folder') {
-      const f = state.store.folders.find(x => x.id === id)
-      const name = await promptText('Rename folder', f.name)
-      if (name && name.trim()) { f.name = name.trim(); await persist() }
-    } else if (act === 'delete-folder') {
-      if (await confirmAction('Delete folder? Subscriptions will move to uncategorized.')) {
-        state.store.folders = state.store.folders.filter(x => x.id !== id)
-        for (const s of state.store.subscriptions) if (s.folderId === id) s.folderId = null
-        if (state.view.kind === 'folder' && state.view.folderId === id) setView({ kind: 'podcasts' })
-        else await persist()
-      }
-    } else if (act === 'rename-playlist') {
-      const p = state.store.playlists.find(x => x.id === id)
-      const name = await promptText('Rename playlist', p.name)
-      if (name && name.trim()) { p.name = name.trim(); await persist() }
-    } else if (act === 'delete-playlist') {
-      if (await confirmAction('Delete playlist?')) {
-        state.store.playlists = state.store.playlists.filter(x => x.id !== id)
-        if (state.view.kind === 'playlist' && state.view.playlistId === id) setView({ kind: 'podcasts' })
-        else await persist()
-      }
-    }
     return
   }
   const folderRow = e.target.closest('[data-folder]')
@@ -1558,44 +1700,82 @@ els.nav.addEventListener('click', async (e) => {
   }
 })
 
-els.addUrl.addEventListener('click', async () => {
-  const url = await promptText('Podcast feed URL (RSS or Apple Podcasts page)')
-  if (!url) return
-  setView({ kind: 'loading' })
-  try {
-    const feed = await window.api.fetchFeed(url.trim())
-    const canonical = feed.feedUrl || url.trim()
-    state.episodeCache.set(canonical, { fetchedAt: Date.now(), ...feed })
-    if (!state.store.subscriptions.some(s => s.feedUrl === canonical)) {
-      state.store.subscriptions.push({
-        feedUrl: canonical,
-        title: feed.title || canonical,
-        imageUrl: feed.imageUrl,
-        folderId: null
-      })
-      await persist()
+els.nav.addEventListener('contextmenu', async e => {
+  const folderRow = e.target.closest('[data-folder]')
+  const playlistRow = !folderRow && e.target.closest('[data-playlist]')
+  if (!folderRow && !playlistRow) return
+  e.preventDefault()
+  const items = [
+    { id: 'rename', label: 'Rename' },
+    { id: 'delete', label: 'Delete' }
+  ]
+  const chosen = await window.api.showCardMenu({ items, x: e.clientX, y: e.clientY })
+  if (!chosen) return
+  if (folderRow) {
+    const id = folderRow.dataset.folder
+    if (chosen === 'rename') startRenameFolder(id)
+    else if (chosen === 'delete') {
+      if (await confirmAction('Delete folder? Subscriptions will move to uncategorized.')) {
+        state.store.folders = state.store.folders.filter(x => x.id !== id)
+        for (const s of state.store.subscriptions) if (s.folderId === id) s.folderId = null
+        if (state.view.kind === 'folder' && state.view.folderId === id) setView({ kind: 'podcasts' })
+        else await persist()
+      }
     }
-    setView({ kind: 'podcast', feedUrl: canonical, feed })
-  } catch (err) {
-    setView({ kind: 'error', message: `Could not load feed: ${err.message}` })
+  } else {
+    const id = playlistRow.dataset.playlist
+    if (chosen === 'rename') startRenamePlaylist(id)
+    else if (chosen === 'delete') {
+      if (await confirmAction('Delete playlist?')) {
+        state.store.playlists = state.store.playlists.filter(x => x.id !== id)
+        if (state.view.kind === 'playlist' && state.view.playlistId === id) setView({ kind: 'podcasts' })
+        else await persist()
+      }
+    }
   }
 })
 
-els.newFolder.addEventListener('click', async () => {
-  const name = await promptText('Folder name')
-  if (!name || !name.trim()) return
-  state.store.folders.push({ id: uid(), name: name.trim() })
-  await persist()
+els.newFolder.addEventListener('click', () => {
+  startNewFolder()
 })
 
-els.newPlaylist.addEventListener('click', async () => {
-  const name = await promptText('Playlist name')
-  if (!name || !name.trim()) return
-  const pl = { id: uid(), name: name.trim(), items: [] }
-  state.store.playlists.push(pl)
-  await persist()
-  setView({ kind: 'playlist', playlistId: pl.id })
+els.foldersList.addEventListener('click', e => {
+  if (e.target.closest('[data-editing="true"]')) e.stopPropagation()
 })
+
+els.foldersList.addEventListener('keydown', e => {
+  const input = e.target.closest('.row-edit')
+  if (!input) return
+  if (e.key === 'Enter') { e.preventDefault(); commitFolderEdit(input.value) }
+  else if (e.key === 'Escape') { e.preventDefault(); cancelFolderEdit() }
+})
+
+els.foldersList.addEventListener('blur', e => {
+  const input = e.target.closest('.row-edit')
+  if (!input || !state.folderEdit) return
+  commitFolderEdit(input.value)
+}, true)
+
+els.newPlaylist.addEventListener('click', () => {
+  startNewPlaylist()
+})
+
+els.playlistsList.addEventListener('click', e => {
+  if (e.target.closest('[data-editing="true"]')) e.stopPropagation()
+})
+
+els.playlistsList.addEventListener('keydown', e => {
+  const input = e.target.closest('.row-edit')
+  if (!input) return
+  if (e.key === 'Enter') { e.preventDefault(); commitPlaylistEdit(input.value) }
+  else if (e.key === 'Escape') { e.preventDefault(); cancelPlaylistEdit() }
+})
+
+els.playlistsList.addEventListener('blur', e => {
+  const input = e.target.closest('.row-edit')
+  if (!input || !state.playlistEdit) return
+  commitPlaylistEdit(input.value)
+}, true)
 
 els.view.addEventListener('click', async e => {
   const card = e.target.closest('.gallery-card')
