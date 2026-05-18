@@ -5,16 +5,50 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
+    "make-icon": "node scripts/make-icon.js",
+    "dist": "npm run make-icon && electron-builder",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "nickmjones",
   "license": "ISC",
   "devDependencies": {
+    "@phosphor-icons/core": "^2.1.1",
     "electron": "^42.1.0",
-    "electron-reloader": "^1.2.3"
+    "electron-builder": "^26.8.1",
+    "electron-reloader": "^1.2.3",
+    "sharp": "^0.34.5"
   },
   "dependencies": {
     "material-symbols": "^0.44.8",
     "rss-parser": "^3.13.0"
+  },
+  "build": {
+    "appId": "com.nickmjones.elecpod",
+    "productName": "elecpod",
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer.js",
+      "index.html",
+      "style.css",
+      "package.json",
+      "node_modules/**/*",
+      "!node_modules/@phosphor-icons/**",
+      "!node_modules/sharp/**",
+      "!node_modules/electron-builder/**",
+      "!node_modules/electron-reloader/**"
+    ],
+    "directories": {
+      "buildResources": "build",
+      "output": "dist"
+    },
+    "mac": {
+      "category": "public.app-category.music",
+      "icon": "build/icon.png",
+      "target": [
+        { "target": "dmg", "arch": ["arm64"] },
+        { "target": "zip", "arch": ["arm64"] }
+      ]
+    }
   }
 }
