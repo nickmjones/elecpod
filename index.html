@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; img-src 'self' https: data:; media-src 'self' https:; script-src 'self'; style-src 'self'; connect-src 'self'"
+    />
+    <title>elecpod</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <aside id="sidebar">
+        <div class="sidebar-header">
+          <input id="search-input" type="search" placeholder="Search podcasts…" />
+        </div>
+        <nav id="sidebar-nav">
+          <div class="nav-item" data-view="podcasts">Podcasts</div>
+          <div class="nav-item" data-view="incoming">
+            <span>Incoming</span>
+            <button id="refresh-btn" title="Refresh feeds">↻</button>
+          </div>
+          <div class="nav-item" data-view="discover">Discover</div>
+          <div class="nav-divider"></div>
+          <div class="section-head">
+            <span>Folders</span>
+            <span class="head-actions">
+              <button id="add-url-btn" title="Add podcast by feed URL">+ url</button>
+              <button id="new-folder-btn" title="New folder">+</button>
+            </span>
+          </div>
+          <div id="folders-list"></div>
+          <div class="nav-divider"></div>
+          <div class="section-head">
+            <span>Playlists</span>
+            <span class="head-actions">
+              <button id="new-playlist-btn" title="New playlist">+</button>
+            </span>
+          </div>
+          <div id="playlists-list"></div>
+        </nav>
+      </aside>
+      <main id="main">
+        <div id="view"></div>
+      </main>
+    </div>
+    <footer id="player">
+      <div id="now-playing">
+        <div id="np-title">Nothing playing</div>
+        <div id="np-podcast"></div>
+      </div>
+      <audio id="audio" controls preload="none"></audio>
+    </footer>
+    <script src="./renderer.js"></script>
+  </body>
+</html>
