@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, ipcMain } = require('electron')
+const { app, BrowserWindow, Menu, shell, ipcMain } = require('electron')
 const path = require('node:path')
 const fs = require('node:fs/promises')
 const Parser = require('rss-parser')
@@ -16,7 +16,15 @@ app.commandLine.appendSwitch('disable-features', 'VaapiVideoDecoder,VaapiVideoEn
 
 const parser = new Parser({
   customFields: {
-    item: [['itunes:duration', 'itunesDuration'], ['itunes:image', 'itunesImage']]
+    item: [
+      ['itunes:duration', 'itunesDuration'],
+      ['itunes:image', 'itunesImage'],
+      ['itunes:subtitle', 'itunesSubtitle'],
+      ['itunes:summary', 'itunesSummary'],
+      ['itunes:season', 'itunesSeason'],
+      ['itunes:episode', 'itunesEpisode'],
+      ['content:encoded', 'contentEncoded']
+    ]
   }
 })
 
@@ -74,6 +82,10 @@ function createWindow () {
     webPreferences: { preload: path.join(__dirname, 'preload.js') }
   })
   win.loadFile('index.html')
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:/i.test(url)) shell.openExternal(url)
+    return { action: 'deny' }
+  })
 }
 
 ipcMain.handle('search', async (_e, term) => {
@@ -103,14 +115,27 @@ async function fetchFeedData (feedUrl) {
     description: feed.description,
     imageUrl: feed.image?.url || feed.itunes?.image,
     episodes: (feed.items || [])
-      .map(item => ({
-        title: item.title,
-        pubDate: item.pubDate,
-        description: item.contentSnippet || '',
-        audioUrl: item.enclosure?.url,
-        duration: item.itunesDuration || item.itunes?.duration,
-        guid: item.guid || item.link || item.enclosure?.url
-      }))
+      .map(item => {
+        const itunesImage = typeof item.itunesImage === 'object'
+          ? (item.itunesImage?.href || item.itunesImage?.$?.href || '')
+          : (item.itunesImage || '')
+        return {
+          title: item.title,
+          pubDate: item.pubDate,
+          description: item.contentSnippet || '',
+          content: item.contentEncoded || item.content || '',
+          link: item.link || '',
+          imageUrl: itunesImage || item.itunes?.image || '',
+          author: item.creator || item.itunes?.author || '',
+          subtitle: item.itunesSubtitle || item.itunes?.subtitle || '',
+          summary: item.itunesSummary || item.itunes?.summary || '',
+          season: item.itunesSeason || item.itunes?.season || null,
+          episodeNum: item.itunesEpisode || item.itunes?.episode || null,
+          audioUrl: item.enclosure?.url,
+          duration: item.itunesDuration || item.itunes?.duration,
+          guid: item.guid || item.link || item.enclosure?.url
+        }
+      })
       .filter(e => e.audioUrl)
   }
 }
@@ -179,6 +204,10 @@ ipcMain.handle('getStore', () => loadStore())
 ipcMain.handle('saveStore', async (_e, store) => {
   await saveStore(store)
   return store
+})
+
+ipcMain.handle('openExternal', (_e, url) => {
+  if (typeof url === 'string' && /^https?:/i.test(url)) return shell.openExternal(url)
 })
 
 ipcMain.handle('showCardMenu', (event, { items, x, y }) => {

@@ -20,7 +20,7 @@
           <div class="nav-item" data-view="podcasts"><span class="mi nav-icon">podcasts</span>Podcasts</div>
           <div class="nav-item" data-view="incoming">
             <span class="mi nav-icon">inbox</span>Incoming
-            <button id="refresh-btn" title="Refresh feeds"><span class="mi">refresh</span></button>
+            <button id="refresh-btn" class="btn btn-ghost btn-icon btn-sm" title="Refresh feeds"><span class="mi">refresh</span></button>
           </div>
           <div class="nav-item" data-view="discover"><span class="mi nav-icon">explore</span>Discover</div>
           <div class="nav-item" data-view="in-progress"><span class="mi nav-icon">history</span>In Progress</div>
@@ -28,15 +28,15 @@
           <div class="section-head">
             <span>Folders</span>
             <span class="head-actions">
-              <button id="add-url-btn" title="Add podcast by feed URL"><span class="mi">link</span></button>
-              <button id="new-folder-btn" title="New folder"><span class="mi">add</span></button>
+              <button id="add-url-btn" class="btn btn-ghost btn-icon btn-sm" title="Add podcast by feed URL"><span class="mi">link</span></button>
+              <button id="new-folder-btn" class="btn btn-ghost btn-icon btn-sm" title="New folder"><span class="mi">add</span></button>
             </span>
           </div>
           <div id="folders-list"></div>
           <div class="section-head">
             <span>Playlists</span>
             <span class="head-actions">
-              <button id="new-playlist-btn" title="New playlist"><span class="mi">add</span></button>
+              <button id="new-playlist-btn" class="btn btn-ghost btn-icon btn-sm" title="New playlist"><span class="mi">add</span></button>
             </span>
           </div>
           <div id="playlists-list"></div>
@@ -46,42 +46,47 @@
         </div>
       </aside>
       <main id="main">
-        <div id="view"></div>
-        <div id="selection-bar" class="floating-selection-bar" data-hidden="true" aria-hidden="true">
-          <div class="sel-inner">
-            <span class="sel-count">0 selected</span>
-            <button data-act="sel-add-playlist" class="primary">Add to playlist</button>
-            <button data-act="sel-skip" class="icon-btn" title="Skip selected"><span class="mi">hearing_disabled</span></button>
-            <button data-act="sel-clear">Clear</button>
+        <header id="main-toolbar">
+          <div class="tb-section tb-transport">
+            <button id="pc-skip-back" class="pc-btn" title="Back 30s" disabled><span class="mi">replay_30</span></button>
+            <button id="pc-play" class="pc-btn pc-play" title="Play" data-state="play" disabled>
+              <span class="mi mi-fill pc-play-icon" data-icon="play">play_arrow</span>
+              <span class="mi mi-fill pc-play-icon" data-icon="pause">pause</span>
+              <span class="mi pc-play-icon" data-icon="loading">progress_activity</span>
+            </button>
+            <button id="pc-skip-fwd" class="pc-btn" title="Forward 30s" disabled><span class="mi">forward_30</span></button>
+          </div>
+          <div class="tb-section tb-np" id="now-playing">
+            <div id="np-art" class="np-art"><img alt="" /></div>
+            <div class="np-text">
+              <div id="np-title">Nothing playing</div>
+              <div id="np-podcast"></div>
+            </div>
+            <div class="np-seek">
+              <span id="pc-cur" class="pc-time">0:00</span>
+              <input id="pc-seek" class="pc-range" type="range" min="0" max="1000" value="0" step="1" disabled />
+              <span id="pc-dur" class="pc-time">0:00</span>
+            </div>
+          </div>
+          <div class="tb-section tb-audio">
+            <button id="pc-mute" class="pc-btn" title="Mute"><span class="mi">volume_up</span></button>
+            <input id="pc-vol" class="pc-range pc-vol" type="range" min="0" max="1" step="0.01" value="1" />
+          </div>
+          <audio id="audio" preload="none"></audio>
+        </header>
+        <div id="main-scroll">
+          <div id="view"></div>
+          <div id="selection-bar" class="floating-selection-bar" data-hidden="true" aria-hidden="true">
+            <div class="sel-inner">
+              <span class="sel-count">0 selected</span>
+              <button data-act="sel-add-playlist" class="btn btn-primary btn-pill">Add to playlist</button>
+              <button data-act="sel-skip" class="btn btn-ghost btn-icon btn-pill" title="Skip selected"><span class="mi">hearing_disabled</span></button>
+              <button data-act="sel-clear" class="btn btn-default btn-pill">Clear</button>
+            </div>
           </div>
         </div>
       </main>
     </div>
-    <footer id="player">
-      <div id="now-playing">
-        <div id="np-title">Nothing playing</div>
-        <div id="np-podcast"></div>
-      </div>
-      <div id="player-controls">
-        <button id="pc-skip-back" class="pc-btn" title="Back 15s" disabled><span class="mi">replay</span></button>
-        <button id="pc-play" class="pc-btn pc-play" title="Play" disabled><span class="mi mi-fill">play_arrow</span></button>
-        <button id="pc-skip-fwd" class="pc-btn" title="Forward 30s" disabled><span class="mi">forward_30</span></button>
-        <span id="pc-cur" class="pc-time">0:00</span>
-        <input id="pc-seek" class="pc-range" type="range" min="0" max="1000" value="0" step="1" disabled />
-        <span id="pc-dur" class="pc-time">0:00</span>
-        <select id="pc-rate" class="pc-rate" title="Playback speed">
-          <option value="0.75">0.75×</option>
-          <option value="1" selected>1×</option>
-          <option value="1.25">1.25×</option>
-          <option value="1.5">1.5×</option>
-          <option value="1.75">1.75×</option>
-          <option value="2">2×</option>
-        </select>
-        <button id="pc-mute" class="pc-btn" title="Mute"><span class="mi">volume_up</span></button>
-        <input id="pc-vol" class="pc-range pc-vol" type="range" min="0" max="1" step="0.01" value="1" />
-      </div>
-      <audio id="audio" preload="none"></audio>
-    </footer>
     <script src="./renderer.js"></script>
   </body>
 </html>

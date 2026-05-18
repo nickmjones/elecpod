@@ -10,5 +10,6 @@ contextBridge.exposeInMainWorld('api', {
   getBlacklistDefaults: () => ipcRenderer.invoke('getBlacklistDefaults'),
   getStore: () => ipcRenderer.invoke('getStore'),
   saveStore: (store) => ipcRenderer.invoke('saveStore', store),
-  showCardMenu: (payload) => ipcRenderer.invoke('showCardMenu', payload)
+  showCardMenu: (payload) => ipcRenderer.invoke('showCardMenu', payload),
+  openExternal: (url) => ipcRenderer.invoke('openExternal', url)
 })

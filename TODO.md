@@ -12,4 +12,5 @@
 - [x] All podcast-level options that are not favorite should be under a kebab menu. Options include:
   - Add to playlist
   - Mute/skip/always skip (whatever we decide to call it)
-  - Any other options that beling
+  - Any other options that belong
+- [x] Reserve space at the top of the main pane for a future toolbar. This also prevents the scrollbar from going to the very top of the window.
