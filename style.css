@@ -1,9 +1,9 @@
 * { box-sizing: border-box; }
 
 :root {
-  --foreground:       oklch(58.176% 0.25749 296.229);
-  --foreground-light: oklch(80.314% 0.11737 303.101);
-  --foreground-dark:  oklch(43.2% 0.232 292.759);
+  --foreground:       oklch(77.7% 0.152 181.912);
+  --foreground-light: oklch(85.5% 0.138 181.071);
+  --foreground-dark:  oklch(51.1% 0.096 186.391);
 }
 
 .mi {
@@ -38,7 +38,7 @@ html, body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   font-size: 14px;
   color: #e6e6e6;
-  background: #141414;
+  background: #1d1d1f;
 }
 
 body {
@@ -54,8 +54,8 @@ body {
 
 #sidebar {
   width: 260px;
-  border-right: 1px solid #2c2c2c;
-  background: #1a1a1a;
+  border-right: 1px solid #2a2a2c;
+  background: #232326;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -102,8 +102,9 @@ body.platform-win32 #main::before {
   width: 100%;
   padding: 8px 10px;
   background: #1f1f1f;
-  border: 1px solid #333;
-  border-radius: 6px;
+  border: 1px solid #222;
+  border-bottom: 1px solid #555;
+  border-radius: 8px;
   color: inherit;
   font-size: 13px;
 }
@@ -111,6 +112,24 @@ body.platform-win32 #main::before {
 #search-input:focus {
   outline: none;
   border-color: var(--foreground);
+}
+
+#search-input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-left: 6px;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path d='M3 3l6 6M9 3l-6 6' stroke='%23999' stroke-width='1.6' stroke-linecap='round'/></svg>");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+#search-input::-webkit-search-cancel-button:hover {
+  opacity: 1;
 }
 
 .sidebar-section {
@@ -188,13 +207,33 @@ body.platform-win32 #main::before {
 .nav-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 6px 12px 6px 18px;
+  gap: 10px;
+  padding: 6px 12px;
   margin: 1px 8px;
   border-radius: 6px;
   cursor: pointer;
   color: #ccc;
   font-size: 13px;
+}
+
+.nav-row .row-icon {
+  color: #888;
+  font-size: 1.25em;
+  flex-shrink: 0;
+}
+
+.nav-row .row-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nav-row .row-count {
+  color: #666;
+  font-size: 11px;
+  margin-left: 4px;
 }
 
 .nav-row:hover {
@@ -494,6 +533,17 @@ body.platform-win32 #main::before {
   cursor: pointer;
 }
 
+.podcast-header select,
+.view-header select {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M3 4.5l3 3 3-3' stroke='%23bbb' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 12px;
+  padding-right: 32px;
+}
+
 .podcast-header button:hover {
   background: #3a3a3a;
 }
@@ -716,6 +766,63 @@ body.platform-win32 #main::before {
   text-align: center;
 }
 
+@keyframes skel-shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.skel {
+  background: linear-gradient(90deg, #1f1f1f 0%, #2a2a2a 50%, #1f1f1f 100%);
+  background-size: 200% 100%;
+  animation: skel-shimmer 1.5s linear infinite;
+  border-radius: 4px;
+}
+
+.skel-art {
+  width: 160px;
+  height: 160px;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+.skel-title {
+  height: 26px;
+  width: 70%;
+  margin-bottom: 12px;
+}
+
+.skel-line {
+  height: 10px;
+  margin: 6px 0;
+  width: 100%;
+}
+
+.skel-line-short {
+  width: 55%;
+}
+
+.skel-line-tiny {
+  width: 30%;
+}
+
+.skel-btn {
+  height: 30px;
+  width: 96px;
+  border-radius: 6px;
+  margin-top: 4px;
+}
+
+.skel-circle {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.skel-episode {
+  pointer-events: none;
+}
+
 .modal-overlay {
   position: fixed;
   inset: 0;
@@ -784,6 +891,33 @@ body.platform-win32 #main::before {
 
 .modal-actions button.primary:hover {
   background: var(--foreground-dark);
+}
+
+.subview-bar {
+  margin-bottom: 14px;
+}
+
+.back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: 1px solid #2c2c2c;
+  color: #bbb;
+  border-radius: 6px;
+  padding: 4px 10px 4px 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.back-btn:hover {
+  background: #1f1f1f;
+  color: #fff;
+  border-color: #3a3a3a;
+}
+
+.back-btn .mi {
+  font-size: 1.1em;
 }
 
 .view-header {
@@ -937,6 +1071,35 @@ body.platform-win32 #main::before {
 
 .gallery-card:hover .folder-pick {
   opacity: 1;
+}
+
+.episode .fav-btn {
+  background: transparent;
+  border: none;
+  color: #666;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  cursor: pointer;
+  flex-shrink: 0;
+  font-size: 14px;
+  margin-left: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.episode .fav-btn:hover {
+  background: #2a2a2a;
+  color: #ccc;
+}
+
+.episode .fav-btn.favorited {
+  color: var(--foreground);
+}
+
+.episode .fav-btn.favorited:hover {
+  color: var(--foreground-light);
 }
 
 .episode .add-btn {

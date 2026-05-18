@@ -52,6 +52,7 @@ async function loadStore () {
   store.playlists ||= []
   store.discoverBlacklist ||= []
   store.inProgress ||= []
+  store.favorites ||= []
   return store
 }
 
@@ -65,10 +66,10 @@ function createWindow () {
   const win = new BrowserWindow({
     width: 1100,
     height: 750,
-    backgroundColor: '#141414',
+    backgroundColor: '#1d1d1f',
     titleBarStyle: isMac ? 'hiddenInset' : (isWin ? 'hidden' : 'default'),
     ...(isMac ? { trafficLightPosition: { x: 14, y: 14 } } : {}),
-    ...(isWin ? { titleBarOverlay: { color: '#1a1a1a', symbolColor: '#e6e6e6', height: 36 } } : {}),
+    ...(isWin ? { titleBarOverlay: { color: '#232326', symbolColor: '#e6e6e6', height: 36 } } : {}),
     webPreferences: { preload: path.join(__dirname, 'preload.js') }
   })
   win.loadFile('index.html')

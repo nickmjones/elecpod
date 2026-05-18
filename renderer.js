@@ -4,10 +4,48 @@ const state = {
   view: { kind: 'podcasts' },
   player: { episode: null, source: null },
   searchDebounce: null,
+  viewHistory: [],
   refreshing: false,
   incomingFilter: '7d',
+  podcastSort: 'newest',
   discoverCache: null,
   blacklistDefaults: []
+}
+
+const PODCAST_SORTS = [
+  { id: 'newest', label: 'Newest first' },
+  { id: 'oldest', label: 'Oldest first' },
+  { id: 'longest', label: 'Longest first' },
+  { id: 'shortest', label: 'Shortest first' },
+  { id: 'title-az', label: 'Title A → Z' },
+  { id: 'title-za', label: 'Title Z → A' }
+]
+
+function durationSeconds (s) {
+  if (!s) return 0
+  const str = String(s).trim()
+  if (/^\d+$/.test(str)) return parseInt(str, 10)
+  const parts = str.split(':').map(p => parseInt(p, 10) || 0)
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2]
+  if (parts.length === 2) return parts[0] * 60 + parts[1]
+  return 0
+}
+
+function sortEpisodes (episodes, sortId) {
+  const indexed = episodes.map((ep, i) => ({ ep, i }))
+  const cmpDate = (a, b) => (new Date(a.ep.pubDate || 0)) - (new Date(b.ep.pubDate || 0))
+  const cmpTitle = (a, b) => String(a.ep.title || '').localeCompare(String(b.ep.title || ''), undefined, { sensitivity: 'base' })
+  const cmpDur = (a, b) => durationSeconds(a.ep.duration) - durationSeconds(b.ep.duration)
+  switch (sortId) {
+    case 'oldest':   indexed.sort(cmpDate); break
+    case 'title-az': indexed.sort(cmpTitle); break
+    case 'title-za': indexed.sort((a, b) => -cmpTitle(a, b)); break
+    case 'longest':  indexed.sort((a, b) => -cmpDur(a, b)); break
+    case 'shortest': indexed.sort(cmpDur); break
+    case 'newest':
+    default:         indexed.sort((a, b) => -cmpDate(a, b))
+  }
+  return indexed
 }
 
 let currentDrag = null
@@ -73,10 +111,28 @@ async function persist () {
   renderSidebar()
 }
 
-function setView (view) {
+const ROOT_VIEWS = new Set(['podcasts', 'incoming', 'discover', 'in-progress', 'favorites', 'settings', 'folder', 'playlist'])
+
+function setView (view, { push = true } = {}) {
+  if (push && state.view && state.view.kind && state.view.kind !== 'loading' && state.view.kind !== 'error') {
+    state.viewHistory.push(state.view)
+    if (state.viewHistory.length > 30) state.viewHistory.shift()
+  }
   state.view = view
   renderView()
   renderSidebar()
+}
+
+function goBack () {
+  if (!state.viewHistory.length) return
+  const prev = state.viewHistory.pop()
+  setView(prev, { push: false })
+}
+
+function backBarHtml () {
+  if (ROOT_VIEWS.has(state.view.kind)) return ''
+  if (!state.viewHistory.length) return ''
+  return `<div class="subview-bar"><button class="back-btn" data-act="back" title="Back"><span class="mi">arrow_back</span>Back</button></div>`
 }
 
 // ------- Modals -------
@@ -175,6 +231,7 @@ function renderSidebar () {
 
   els.foldersList.innerHTML = state.store.folders.map(f => `
     <div class="nav-row${v.kind === 'folder' && v.folderId === f.id ? ' active' : ''}" data-folder="${f.id}">
+      <span class="mi row-icon">folder</span>
       <span class="row-label">${escapeHtml(f.name)}</span>
       <span class="row-actions">
         <button data-act="rename-folder" data-id="${f.id}" title="Rename"><span class="mi">edit</span></button>
@@ -185,7 +242,8 @@ function renderSidebar () {
 
   els.playlistsList.innerHTML = state.store.playlists.map(p => `
     <div class="nav-row${v.kind === 'playlist' && v.playlistId === p.id ? ' active' : ''}" data-playlist="${p.id}">
-      <span class="row-label">${escapeHtml(p.name)} <span style="color:#666;font-size:11px">(${p.items.length})</span></span>
+      <span class="mi row-icon">playlist_play</span>
+      <span class="row-label">${escapeHtml(p.name)} <span class="row-count">(${p.items.length})</span></span>
       <span class="row-actions">
         <button data-act="rename-playlist" data-id="${p.id}" title="Rename"><span class="mi">edit</span></button>
         <button data-act="delete-playlist" data-id="${p.id}" title="Delete"><span class="mi">close</span></button>
@@ -208,12 +266,14 @@ function renderView () {
     case 'incoming': return renderIncoming()
     case 'discover': return renderDiscover()
     case 'in-progress': return renderInProgress()
+    case 'favorites': return renderFavorites()
     case 'settings': return renderSettings()
     case 'playlist': return renderPlaylistView(v.playlistId)
     case 'podcast': return renderPodcast(v)
+    case 'podcast-loading': return renderPodcastSkeleton(v)
     case 'search': return renderSearch(v.term, v.results)
     case 'loading': els.view.innerHTML = `<div class="loading">Loading…</div>`; return
-    case 'error': els.view.innerHTML = `<div class="empty-state">Error: ${escapeHtml(v.message)}</div>`; return
+    case 'error': els.view.innerHTML = `${backBarHtml()}<div class="empty-state">Error: ${escapeHtml(v.message)}</div>`; return
     default: els.view.innerHTML = `<div class="empty-state">Pick something.</div>`
   }
 }
@@ -301,7 +361,43 @@ function incomingRow (e, i) {
         <div class="meta">${fmtDate(e.pubDate)}${e.duration ? ' · ' + escapeHtml(fmtDuration(e.duration)) : ''}</div>
         <div class="desc">${escapeHtml(e.description)}</div>
       </div>
+      ${e.audioUrl ? favBtnHtml(e.audioUrl) : ''}
       <button class="add-btn" data-act="add-incoming" data-idx="${i}" title="Add to playlist"><span class="mi">add</span></button>
+    </div>
+  `
+}
+
+function renderPodcastSkeleton (v) {
+  const hint = v.hint || {}
+  const sub = state.store.subscriptions.find(s => s.feedUrl === v.feedUrl)
+  const title = hint.title || sub?.title || ''
+  const imageUrl = hint.imageUrl || sub?.imageUrl || ''
+  els.view.innerHTML = `
+    ${backBarHtml()}
+    <div class="podcast-header">
+      ${imageUrl
+        ? `<img src="${escapeHtml(imageUrl)}" alt="" />`
+        : `<div class="skel skel-art"></div>`}
+      <div class="meta">
+        ${title
+          ? `<h1>${escapeHtml(title)}</h1>`
+          : `<div class="skel skel-title"></div>`}
+        <div class="skel skel-line"></div>
+        <div class="skel skel-line skel-line-short"></div>
+        <div class="actions"><div class="skel skel-btn"></div></div>
+      </div>
+    </div>
+    <div class="episodes">
+      ${Array.from({ length: 5 }, () => `
+        <div class="episode skel-episode">
+          <div class="skel skel-circle"></div>
+          <div class="episode-info">
+            <div class="skel skel-line skel-line-short"></div>
+            <div class="skel skel-line"></div>
+            <div class="skel skel-line skel-line-tiny"></div>
+          </div>
+        </div>
+      `).join('')}
     </div>
   `
 }
@@ -315,19 +411,34 @@ function renderPodcast (v) {
     ? `<button data-act="unsubscribe">Unsubscribe</button>`
     : `<button class="primary" data-act="subscribe">Subscribe</button>`
 
+  const sortOptions = PODCAST_SORTS.map(s =>
+    `<option value="${s.id}"${s.id === state.podcastSort ? ' selected' : ''}>${escapeHtml(s.label)}</option>`
+  ).join('')
+
+  const sorted = sortEpisodes(feed.episodes, state.podcastSort)
+
   els.view.innerHTML = `
+    ${backBarHtml()}
     <div class="podcast-header">
       <img src="${escapeHtml(feed.imageUrl || sub?.imageUrl || '')}" alt="" />
       <div class="meta">
         <h1>${escapeHtml(feed.title || sub?.title || '')}</h1>
         <p>${escapeHtml((feed.description || '').slice(0, 400))}</p>
-        <div class="actions">${subscribeBtn}</div>
+        <div class="actions">
+          ${subscribeBtn}
+          <select id="podcast-sort" title="Sort episodes">${sortOptions}</select>
+        </div>
       </div>
     </div>
     <div class="episodes">
-      ${feed.episodes.map((e, i) => episodeRow(e, i)).join('')}
+      ${sorted.map(({ ep, i }) => episodeRow(ep, i)).join('')}
     </div>
   `
+  const sel = document.getElementById('podcast-sort')
+  if (sel) sel.addEventListener('change', () => {
+    state.podcastSort = sel.value
+    renderView()
+  })
 }
 
 function episodeRow (e, i) {
@@ -340,6 +451,7 @@ function episodeRow (e, i) {
         <div class="meta">${fmtDate(e.pubDate)}${e.duration ? ' · ' + escapeHtml(fmtDuration(e.duration)) : ''}</div>
         <div class="desc">${escapeHtml(e.description)}</div>
       </div>
+      ${e.audioUrl ? favBtnHtml(e.audioUrl) : ''}
       <button class="add-btn" data-act="add-to-playlist" data-idx="${i}" title="Add to playlist"><span class="mi">add</span></button>
     </div>
   `
@@ -420,6 +532,115 @@ function searchCardHtml (r, subbed) {
   `
 }
 
+// ------- Favorites -------
+
+function isFavorited (audioUrl) {
+  return (state.store.favorites || []).some(x => x.audioUrl === audioUrl)
+}
+
+async function addFavorite (ep) {
+  state.store.favorites ||= []
+  if (isFavorited(ep.audioUrl)) return
+  state.store.favorites.push({
+    audioUrl: ep.audioUrl,
+    title: ep.title,
+    pubDate: ep.pubDate,
+    duration: ep.duration,
+    guid: ep.guid,
+    feedUrl: ep.feedUrl,
+    podcastTitle: ep.podcastTitle,
+    podcastImage: ep.podcastImage,
+    favoritedAt: Date.now()
+  })
+  await persist()
+}
+
+async function removeFavorite (audioUrl) {
+  if (!state.store.favorites) return
+  const before = state.store.favorites.length
+  state.store.favorites = state.store.favorites.filter(x => x.audioUrl !== audioUrl)
+  if (state.store.favorites.length !== before) await persist()
+}
+
+async function toggleFavorite (ep) {
+  if (isFavorited(ep.audioUrl)) await removeFavorite(ep.audioUrl)
+  else await addFavorite(ep)
+  if (state.view.kind === 'favorites') renderView()
+  else {
+    const btn = document.querySelector(`button[data-fav-url="${CSS.escape(ep.audioUrl)}"] .mi`)
+    if (btn) {
+      const fav = isFavorited(ep.audioUrl)
+      btn.classList.toggle('mi-fill', fav)
+      btn.parentElement.classList.toggle('favorited', fav)
+    }
+  }
+}
+
+function resolveEpisodeByUrl (audioUrl) {
+  if (!audioUrl) return null
+  const v = state.view
+  if (v.kind === 'podcast') {
+    const ep = v.feed.episodes.find(x => x.audioUrl === audioUrl)
+    if (ep) return { ...ep, feedUrl: v.feedUrl, podcastTitle: v.feed.title, podcastImage: v.feed.imageUrl }
+  }
+  if (v.kind === 'incoming') {
+    const ep = allCachedEpisodes().find(x => x.audioUrl === audioUrl)
+    if (ep) return ep
+  }
+  const fav = (state.store.favorites || []).find(x => x.audioUrl === audioUrl)
+  if (fav) return fav
+  const ip = (state.store.inProgress || []).find(x => x.audioUrl === audioUrl)
+  if (ip) return ip
+  for (const pl of state.store.playlists) {
+    const item = pl.items.find(x => x.audioUrl === audioUrl)
+    if (item) return item
+  }
+  for (const [feedUrl, feed] of state.episodeCache) {
+    const ep = feed.episodes.find(x => x.audioUrl === audioUrl)
+    if (ep) return { ...ep, feedUrl, podcastTitle: feed.title, podcastImage: feed.imageUrl }
+  }
+  return null
+}
+
+function favBtnHtml (audioUrl) {
+  const fav = isFavorited(audioUrl)
+  return `<button class="fav-btn${fav ? ' favorited' : ''}" data-act="toggle-fav" data-fav-url="${escapeHtml(audioUrl)}" title="${fav ? 'Unfavorite' : 'Favorite'}"><span class="mi${fav ? ' mi-fill' : ''}">star</span></button>`
+}
+
+function renderFavorites () {
+  const items = (state.store.favorites || [])
+    .slice()
+    .sort((a, b) => (b.favoritedAt || 0) - (a.favoritedAt || 0))
+  if (!items.length) {
+    els.view.innerHTML = `
+      <div class="view-header"><h1>Favorites</h1></div>
+      <div class="empty-state">No favorites yet. Tap the star next to any episode to add it here.</div>
+    `
+    return
+  }
+  els.view.innerHTML = `
+    <div class="view-header"><h1>Favorites</h1></div>
+    <div class="episodes">
+      ${items.map((e, i) => favoriteRow(e, i)).join('')}
+    </div>
+  `
+}
+
+function favoriteRow (e, i) {
+  const playing = state.player.episode?.audioUrl === e.audioUrl
+  return `
+    <div class="episode">
+      <button class="play-btn${playing ? ' playing' : ''}" data-act="play-favorite" data-idx="${i}"><span class="mi mi-fill">play_arrow</span></button>
+      <div class="episode-info">
+        <div class="ep-podcast">${escapeHtml(e.podcastTitle || '')}</div>
+        <div class="title">${escapeHtml(e.title || 'Untitled')}</div>
+        <div class="meta">${fmtDate(e.pubDate)}${e.duration ? ' · ' + escapeHtml(fmtDuration(e.duration)) : ''}</div>
+      </div>
+      ${favBtnHtml(e.audioUrl)}
+    </div>
+  `
+}
+
 function renderInProgress () {
   const items = (state.store.inProgress || [])
     .slice()
@@ -452,6 +673,7 @@ function inProgressRow (e, i) {
         <div class="meta">${fmtDate(e.pubDate)} · ${fmtClock(e.currentTime)} / ${fmtClock(e.durationSec)} · ${fmtClock(remain)} left</div>
         <div class="progress-bar"><div class="progress-fill" style="width:${pct.toFixed(1)}%"></div></div>
       </div>
+      ${favBtnHtml(e.audioUrl)}
       <button class="add-btn" data-act="remove-in-progress" data-idx="${i}" title="Remove"><span class="mi">close</span></button>
     </div>
   `
@@ -506,6 +728,7 @@ function renderSearch (term, results) {
   }
   const subbed = new Set(state.store.subscriptions.map(s => s.feedUrl))
   els.view.innerHTML = `
+    ${backBarHtml()}
     <div class="view-header"><h1>Search: ${escapeHtml(term)}</h1></div>
     <div class="gallery">
       ${results.map(r => searchCardHtml(r, subbed)).join('')}
@@ -515,14 +738,14 @@ function renderSearch (term, results) {
 
 // ------- Feed actions -------
 
-async function openFeed (feedUrl) {
-  setView({ kind: 'loading' })
+async function openFeed (feedUrl, hint = {}) {
+  setView({ kind: 'podcast-loading', feedUrl, hint })
   try {
     const feed = await window.api.fetchFeed(feedUrl)
     state.episodeCache.set(feed.feedUrl, { fetchedAt: Date.now(), ...feed })
-    setView({ kind: 'podcast', feedUrl: feed.feedUrl, feed })
+    setView({ kind: 'podcast', feedUrl: feed.feedUrl, feed }, { push: false })
   } catch (err) {
-    setView({ kind: 'error', message: err.message || 'Failed to load feed' })
+    setView({ kind: 'error', message: err.message || 'Failed to load feed' }, { push: false })
   }
 }
 
@@ -803,7 +1026,8 @@ els.search.addEventListener('input', e => {
 els.nav.addEventListener('click', async (e) => {
   const navItem = e.target.closest('.nav-item')
   if (navItem && !e.target.closest('button')) {
-    setView({ kind: navItem.dataset.view })
+    state.viewHistory = []
+    setView({ kind: navItem.dataset.view }, { push: false })
     return
   }
   if (e.target === els.refresh) {
@@ -842,12 +1066,14 @@ els.nav.addEventListener('click', async (e) => {
   }
   const folderRow = e.target.closest('[data-folder]')
   if (folderRow) {
-    setView({ kind: 'folder', folderId: folderRow.dataset.folder })
+    state.viewHistory = []
+    setView({ kind: 'folder', folderId: folderRow.dataset.folder }, { push: false })
     return
   }
   const playlistRow = e.target.closest('[data-playlist]')
   if (playlistRow) {
-    setView({ kind: 'playlist', playlistId: playlistRow.dataset.playlist })
+    state.viewHistory = []
+    setView({ kind: 'playlist', playlistId: playlistRow.dataset.playlist }, { push: false })
   }
 })
 
@@ -897,12 +1123,26 @@ els.view.addEventListener('click', async e => {
 
   if (actBtn) {
     const act = actBtn.dataset.act
+    if (act === 'back') { goBack(); return }
     if (act === 'pick-folder') {
       e.stopPropagation()
       await pickFolderFor(actBtn.dataset.feed)
       return
     }
     if (act === 'refresh-all') { await refreshAll(); return }
+    if (act === 'toggle-fav') {
+      e.stopPropagation()
+      const url = actBtn.dataset.favUrl
+      const ep = resolveEpisodeByUrl(url)
+      if (ep) await toggleFavorite(ep)
+      return
+    }
+    if (act === 'play-favorite' && v.kind === 'favorites') {
+      const sorted = (state.store.favorites || []).slice().sort((a, b) => (b.favoritedAt || 0) - (a.favoritedAt || 0))
+      const ep = sorted[parseInt(actBtn.dataset.idx, 10)]
+      if (ep) playEpisode(ep)
+      return
+    }
     if (act === 'bl-remove') {
       const idx = parseInt(actBtn.dataset.idx, 10)
       state.store.discoverBlacklist.splice(idx, 1)
@@ -1018,7 +1258,11 @@ els.view.addEventListener('click', async e => {
   }
 
   if (card) {
-    openFeed(card.dataset.feed)
+    const hint = {
+      title: card.querySelector('.title')?.textContent || '',
+      imageUrl: card.querySelector('img')?.getAttribute('src') || ''
+    }
+    openFeed(card.dataset.feed, hint)
   }
 })
 
@@ -1151,6 +1395,13 @@ function flashSidebarRow (row) {
 // ------- Boot -------
 
 document.body.classList.add(`platform-${window.platform || 'unknown'}`)
+
+window.addEventListener('keydown', (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key === '[') {
+    e.preventDefault()
+    goBack()
+  }
+})
 
 ;(async () => {
   state.store = await window.api.getStore()
