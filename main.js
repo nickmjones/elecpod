@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require('electron')
+const { app, BrowserWindow, Menu, ipcMain } = require('electron')
 const path = require('node:path')
 const fs = require('node:fs/promises')
 const Parser = require('rss-parser')
@@ -53,6 +53,7 @@ async function loadStore () {
   store.discoverBlacklist ||= []
   store.inProgress ||= []
   store.favorites ||= []
+  store.skippedEpisodes ||= []
   return store
 }
 
@@ -178,6 +179,24 @@ ipcMain.handle('getStore', () => loadStore())
 ipcMain.handle('saveStore', async (_e, store) => {
   await saveStore(store)
   return store
+})
+
+ipcMain.handle('showCardMenu', (event, { items, x, y }) => {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  if (!win) return null
+  return new Promise(resolve => {
+    let chosen = null
+    const menu = Menu.buildFromTemplate(items.map(it => ({
+      label: it.label,
+      click: () => { chosen = it.id }
+    })))
+    menu.popup({
+      window: win,
+      x: Math.round(x),
+      y: Math.round(y),
+      callback: () => resolve(chosen)
+    })
+  })
 })
 
 app.whenReady().then(createWindow)

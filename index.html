@@ -47,6 +47,14 @@
       </aside>
       <main id="main">
         <div id="view"></div>
+        <div id="selection-bar" class="floating-selection-bar" data-hidden="true" aria-hidden="true">
+          <div class="sel-inner">
+            <span class="sel-count">0 selected</span>
+            <button data-act="sel-add-playlist" class="primary">Add to playlist</button>
+            <button data-act="sel-skip" class="icon-btn" title="Skip selected"><span class="mi">hearing_disabled</span></button>
+            <button data-act="sel-clear">Clear</button>
+          </div>
+        </div>
       </main>
     </div>
     <footer id="player">

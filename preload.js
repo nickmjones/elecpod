@@ -9,5 +9,6 @@ contextBridge.exposeInMainWorld('api', {
   refreshFeeds: (feedUrls) => ipcRenderer.invoke('refreshFeeds', feedUrls),
   getBlacklistDefaults: () => ipcRenderer.invoke('getBlacklistDefaults'),
   getStore: () => ipcRenderer.invoke('getStore'),
-  saveStore: (store) => ipcRenderer.invoke('saveStore', store)
+  saveStore: (store) => ipcRenderer.invoke('saveStore', store),
+  showCardMenu: (payload) => ipcRenderer.invoke('showCardMenu', payload)
 })

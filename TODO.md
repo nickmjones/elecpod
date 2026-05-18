@@ -1,0 +1,15 @@
+- [x] Make player work with media buttons, spacebar for stop/start
+- [x] Add shift-multiselect for episodes
+- [x] Playback settings
+  - [x] When playing a podcast episode, automatically play next in chronological order (if exists)
+  - [x] If no next exists, just stop
+- [x] Add spinner to play button when episode is caching/initially loading
+- [x] Add pattern for pill for counts in playlists
+- [x] Place pill on right end of playlist row
+- [x] In progress episodes have a green bar or decoration. Need to understand if this is functional, or decoration? If it's meant to show progress, it's broken.
+- [x] UX in the kebab menu on gallery cards is odd. This should probably be a dropdown. Entries would be unsubscribe only for now.
+- [x] Add the ability to mute or otherwise skip over specific episodes of a podcast. Some podcasts will do "after the episide" episodes, teasers, etc. Don't want to hear those.
+- [x] All podcast-level options that are not favorite should be under a kebab menu. Options include:
+  - Add to playlist
+  - Mute/skip/always skip (whatever we decide to call it)
+  - Any other options that beling

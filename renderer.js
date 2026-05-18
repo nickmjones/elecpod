@@ -9,7 +9,8 @@ const state = {
   incomingFilter: '7d',
   podcastSort: 'newest',
   discoverCache: null,
-  blacklistDefaults: []
+  blacklistDefaults: [],
+  selection: { context: null, indices: new Set(), anchor: null }
 }
 
 const PODCAST_SORTS = [
@@ -79,7 +80,9 @@ const els = {
   pcDur: document.getElementById('pc-dur'),
   pcRate: document.getElementById('pc-rate'),
   pcMute: document.getElementById('pc-mute'),
-  pcVol: document.getElementById('pc-vol')
+  pcVol: document.getElementById('pc-vol'),
+  selBar: document.getElementById('selection-bar'),
+  selCount: document.querySelector('#selection-bar .sel-count')
 }
 
 const uid = () => Math.random().toString(36).slice(2, 10)
@@ -119,6 +122,8 @@ function setView (view, { push = true } = {}) {
     if (state.viewHistory.length > 30) state.viewHistory.shift()
   }
   state.view = view
+  clearSelection()
+  updateSelectionBar()
   renderView()
   renderSidebar()
 }
@@ -220,6 +225,206 @@ function pickFromList (title, items, allowNew = null) {
   })
 }
 
+// ------- Skip helpers -------
+
+function isSkipped (audioUrl) {
+  return !!audioUrl && (state.store.skippedEpisodes || []).includes(audioUrl)
+}
+
+async function toggleSkip (audioUrl) {
+  if (!audioUrl) return
+  state.store.skippedEpisodes ||= []
+  const i = state.store.skippedEpisodes.indexOf(audioUrl)
+  if (i >= 0) state.store.skippedEpisodes.splice(i, 1)
+  else state.store.skippedEpisodes.push(audioUrl)
+  await persist()
+}
+
+// ------- Episode row menu -------
+
+function resolveEpisodeAt (context, idx) {
+  if (context === 'podcast' && state.view.kind === 'podcast') {
+    const v = state.view
+    const ep = v.feed.episodes[idx]
+    return ep && { ...ep, feedUrl: v.feedUrl, podcastTitle: v.feed.title, podcastImage: v.feed.imageUrl }
+  }
+  if (context === 'incoming') return allCachedEpisodes()[idx] || null
+  return null
+}
+
+async function openEpisodeMenu (triggerEl) {
+  const ctx = triggerEl.dataset.context
+  const idx = parseInt(triggerEl.dataset.idx, 10)
+  const ep = resolveEpisodeAt(ctx, idx)
+  if (!ep) return
+  const skipped = isSkipped(ep.audioUrl)
+  const items = [
+    { id: 'add', label: 'Add to playlist…' },
+    { id: 'skip', label: skipped ? 'Unskip episode' : 'Skip this episode' }
+  ]
+  const rect = triggerEl.getBoundingClientRect()
+  const chosen = await window.api.showCardMenu({ items, x: rect.left, y: rect.bottom })
+  if (chosen === 'add') {
+    await addEpisodeToPlaylistFlow(ep)
+  } else if (chosen === 'skip') {
+    await toggleSkip(ep.audioUrl)
+    renderView()
+  }
+}
+
+// ------- Card dropdown menu -------
+
+async function openCardMenu (triggerEl, feedUrl) {
+  const sub = state.store.subscriptions.find(s => s.feedUrl === feedUrl)
+  if (!sub) return
+
+  const items = [{ id: 'unsubscribe', label: 'Unsubscribe' }]
+  const rect = triggerEl.getBoundingClientRect()
+  const chosen = await window.api.showCardMenu({
+    items,
+    x: rect.left,
+    y: rect.bottom
+  })
+
+  if (chosen === 'unsubscribe') {
+    if (!(await confirmAction(`Unsubscribe from "${sub.title}"?`))) return
+    state.store.subscriptions = state.store.subscriptions.filter(s => s.feedUrl !== feedUrl)
+    await persist()
+    renderView()
+  }
+}
+
+// ------- Multiselect -------
+
+function clearSelection () {
+  state.selection = { context: null, indices: new Set(), anchor: null }
+}
+
+function rowSelectedClass (context, i) {
+  return state.selection.context === context && state.selection.indices.has(i) ? ' selected' : ''
+}
+
+function updateSelectionBar () {
+  const n = state.selection.indices.size
+  if (!els.selBar) return
+  if (n === 0) {
+    els.selBar.setAttribute('data-hidden', 'true')
+    els.selBar.setAttribute('aria-hidden', 'true')
+    return
+  }
+  els.selCount.textContent = `${n} selected`
+  els.selBar.setAttribute('data-hidden', 'false')
+  els.selBar.setAttribute('aria-hidden', 'false')
+  const skipBtn = els.selBar.querySelector('[data-act="sel-skip"]')
+  if (skipBtn) {
+    const urls = resolveSelectionEpisodes().map(e => e.audioUrl).filter(Boolean)
+    const allSkipped = urls.length > 0 && urls.every(u => isSkipped(u))
+    skipBtn.title = allSkipped ? 'Unskip selected' : 'Skip selected'
+  }
+}
+
+function measureSelectionBar () {
+  if (!els.selBar) return
+  const wasHidden = els.selBar.getAttribute('data-hidden') === 'true'
+  if (wasHidden) {
+    els.selBar.style.visibility = 'hidden'
+    els.selBar.setAttribute('data-hidden', 'false')
+  }
+  const h = els.selBar.offsetHeight
+  if (wasHidden) {
+    els.selBar.setAttribute('data-hidden', 'true')
+    els.selBar.style.visibility = ''
+  }
+  if (h > 0) document.documentElement.style.setProperty('--sel-bar-h', `${h + 24}px`)
+}
+
+function handleEpisodeSelectClick (rowEl, e) {
+  if (e.target.closest('button') || e.target.closest('a')) return
+  const ctx = rowEl.dataset.context
+  const idx = parseInt(rowEl.dataset.idx, 10)
+  if (!ctx || isNaN(idx)) return
+  e.preventDefault()
+  if (window.getSelection) try { window.getSelection().removeAllRanges() } catch {}
+  if (state.selection.context !== ctx) {
+    state.selection = { context: ctx, indices: new Set([idx]), anchor: idx }
+  } else if (e.shiftKey && state.selection.anchor != null) {
+    const a = state.selection.anchor
+    const [lo, hi] = a < idx ? [a, idx] : [idx, a]
+    const next = new Set(state.selection.indices)
+    for (let i = lo; i <= hi; i++) next.add(i)
+    state.selection.indices = next
+  } else if (e.metaKey || e.ctrlKey) {
+    if (state.selection.indices.has(idx)) state.selection.indices.delete(idx)
+    else state.selection.indices.add(idx)
+    state.selection.anchor = idx
+  } else {
+    state.selection = { context: ctx, indices: new Set([idx]), anchor: idx }
+  }
+  renderView()
+  updateSelectionBar()
+}
+
+function resolveSelectionEpisodes () {
+  const { context, indices } = state.selection
+  const arr = [...indices].sort((a, b) => a - b)
+  if (context === 'podcast' && state.view.kind === 'podcast') {
+    const v = state.view
+    return arr.map(i => {
+      const ep = v.feed.episodes[i]
+      return ep && { ...ep, feedUrl: v.feedUrl, podcastTitle: v.feed.title, podcastImage: v.feed.imageUrl }
+    }).filter(Boolean)
+  }
+  if (context === 'incoming') {
+    const all = allCachedEpisodes()
+    return arr.map(i => all[i]).filter(Boolean)
+  }
+  if (context === 'favorites') {
+    const sorted = (state.store.favorites || []).slice().sort((a, b) => (b.favoritedAt || 0) - (a.favoritedAt || 0))
+    return arr.map(i => sorted[i]).filter(Boolean)
+  }
+  if (context === 'in-progress') {
+    const sorted = (state.store.inProgress || []).slice().sort((a, b) => (b.lastPlayedAt || 0) - (a.lastPlayedAt || 0))
+    return arr.map(i => sorted[i]).filter(Boolean)
+  }
+  return []
+}
+
+async function bulkAddToPlaylist (episodes) {
+  if (!episodes.length) return
+  const choice = await pickFromList(
+    `Add ${episodes.length} episode${episodes.length === 1 ? '' : 's'} to playlist`,
+    state.store.playlists.map(p => ({ id: p.id, label: p.name })),
+    { label: '+ New playlist…', prompt: 'New playlist name' }
+  )
+  if (!choice) return
+  let pl
+  if (choice.newName) {
+    pl = { id: uid(), name: choice.newName, items: [] }
+    state.store.playlists.push(pl)
+  } else {
+    pl = state.store.playlists.find(p => p.id === choice.id)
+  }
+  if (!pl) return
+  for (const ep of episodes) {
+    if (!pl.items.some(x => x.audioUrl === ep.audioUrl)) {
+      pl.items.push({
+        audioUrl: ep.audioUrl,
+        title: ep.title,
+        pubDate: ep.pubDate,
+        duration: ep.duration,
+        guid: ep.guid,
+        feedUrl: ep.feedUrl,
+        podcastTitle: ep.podcastTitle,
+        podcastImage: ep.podcastImage
+      })
+    }
+  }
+  await persist()
+  clearSelection()
+  updateSelectionBar()
+  renderView()
+}
+
 // ------- Sidebar -------
 
 function renderSidebar () {
@@ -243,7 +448,8 @@ function renderSidebar () {
   els.playlistsList.innerHTML = state.store.playlists.map(p => `
     <div class="nav-row${v.kind === 'playlist' && v.playlistId === p.id ? ' active' : ''}" data-playlist="${p.id}">
       <span class="mi row-icon">playlist_play</span>
-      <span class="row-label">${escapeHtml(p.name)} <span class="row-count">(${p.items.length})</span></span>
+      <span class="row-label">${escapeHtml(p.name)}</span>
+      <span class="row-pill" title="${p.items.length} episode${p.items.length === 1 ? '' : 's'}">${p.items.length}</span>
       <span class="row-actions">
         <button data-act="rename-playlist" data-id="${p.id}" title="Rename"><span class="mi">edit</span></button>
         <button data-act="delete-playlist" data-id="${p.id}" title="Delete"><span class="mi">close</span></button>
@@ -291,7 +497,7 @@ function renderPodcastsGallery (subs, title) {
     <div class="gallery">
       ${subs.map(s => `
         <div class="gallery-card" draggable="true" data-drag="sub" data-feed="${escapeHtml(s.feedUrl)}">
-          <button class="folder-pick" data-act="pick-folder" data-feed="${escapeHtml(s.feedUrl)}" title="Move to folder"><span class="mi">more_horiz</span></button>
+          <button class="card-kebab" data-act="card-menu" data-feed="${escapeHtml(s.feedUrl)}" title="More"><span class="mi">more_horiz</span></button>
           <img src="${escapeHtml(s.imageUrl || '')}" alt="" />
           <div class="title">${escapeHtml(s.title)}</div>
         </div>
@@ -310,6 +516,7 @@ function allCachedEpisodes (filterId = state.incomingFilter) {
     for (const ep of cached.episodes) {
       const t = ep.pubDate ? new Date(ep.pubDate).getTime() : 0
       if (cutoff && t < cutoff) continue
+      if (isSkipped(ep.audioUrl)) continue
       out.push({
         ...ep,
         feedUrl: sub.feedUrl,
@@ -353,7 +560,7 @@ function renderIncoming () {
 function incomingRow (e, i) {
   const playing = state.player.episode?.audioUrl === e.audioUrl
   return `
-    <div class="episode" draggable="true" data-drag="ep" data-context="incoming" data-idx="${i}">
+    <div class="episode${rowSelectedClass('incoming', i)}" draggable="true" data-drag="ep" data-context="incoming" data-idx="${i}">
       <button class="play-btn${playing ? ' playing' : ''}" data-act="play-incoming" data-idx="${i}"><span class="mi mi-fill">play_arrow</span></button>
       <div class="episode-info">
         <div class="ep-podcast">${escapeHtml(e.podcastTitle || '')}</div>
@@ -362,7 +569,7 @@ function incomingRow (e, i) {
         <div class="desc">${escapeHtml(e.description)}</div>
       </div>
       ${e.audioUrl ? favBtnHtml(e.audioUrl) : ''}
-      <button class="add-btn" data-act="add-incoming" data-idx="${i}" title="Add to playlist"><span class="mi">add</span></button>
+      <button class="kebab-btn" data-act="ep-menu" data-context="incoming" data-idx="${i}" title="More"><span class="mi">more_vert</span></button>
     </div>
   `
 }
@@ -443,16 +650,17 @@ function renderPodcast (v) {
 
 function episodeRow (e, i) {
   const playing = state.player.episode?.audioUrl === e.audioUrl
+  const skipped = isSkipped(e.audioUrl)
   return `
-    <div class="episode" draggable="true" data-drag="ep" data-context="podcast" data-idx="${i}">
+    <div class="episode${rowSelectedClass('podcast', i)}${skipped ? ' skipped' : ''}" draggable="true" data-drag="ep" data-context="podcast" data-idx="${i}">
       <button class="play-btn${playing ? ' playing' : ''}" data-act="play" data-idx="${i}"><span class="mi mi-fill">play_arrow</span></button>
       <div class="episode-info">
-        <div class="title">${escapeHtml(e.title || 'Untitled')}</div>
+        <div class="title">${escapeHtml(e.title || 'Untitled')}${skipped ? ' <span class="skip-tag">skipped</span>' : ''}</div>
         <div class="meta">${fmtDate(e.pubDate)}${e.duration ? ' · ' + escapeHtml(fmtDuration(e.duration)) : ''}</div>
         <div class="desc">${escapeHtml(e.description)}</div>
       </div>
       ${e.audioUrl ? favBtnHtml(e.audioUrl) : ''}
-      <button class="add-btn" data-act="add-to-playlist" data-idx="${i}" title="Add to playlist"><span class="mi">add</span></button>
+      <button class="kebab-btn" data-act="ep-menu" data-context="podcast" data-idx="${i}" title="More"><span class="mi">more_vert</span></button>
     </div>
   `
 }
@@ -629,7 +837,7 @@ function renderFavorites () {
 function favoriteRow (e, i) {
   const playing = state.player.episode?.audioUrl === e.audioUrl
   return `
-    <div class="episode">
+    <div class="episode${rowSelectedClass('favorites', i)}" data-context="favorites" data-idx="${i}">
       <button class="play-btn${playing ? ' playing' : ''}" data-act="play-favorite" data-idx="${i}"><span class="mi mi-fill">play_arrow</span></button>
       <div class="episode-info">
         <div class="ep-podcast">${escapeHtml(e.podcastTitle || '')}</div>
@@ -658,6 +866,9 @@ function renderInProgress () {
       ${items.map((e, i) => inProgressRow(e, i)).join('')}
     </div>
   `
+  els.view.querySelectorAll('.progress-fill[data-pct]').forEach(el => {
+    el.style.width = `${el.dataset.pct}%`
+  })
 }
 
 function inProgressRow (e, i) {
@@ -665,13 +876,13 @@ function inProgressRow (e, i) {
   const pct = e.durationSec > 0 ? Math.max(0, Math.min(100, (e.currentTime / e.durationSec) * 100)) : 0
   const remain = Math.max(0, (e.durationSec || 0) - (e.currentTime || 0))
   return `
-    <div class="episode">
+    <div class="episode${rowSelectedClass('in-progress', i)}" data-context="in-progress" data-idx="${i}">
       <button class="play-btn${playing ? ' playing' : ''}" data-act="play-in-progress" data-idx="${i}"><span class="mi mi-fill">play_arrow</span></button>
       <div class="episode-info">
         <div class="ep-podcast">${escapeHtml(e.podcastTitle || '')}</div>
         <div class="title">${escapeHtml(e.title || 'Untitled')}</div>
         <div class="meta">${fmtDate(e.pubDate)} · ${fmtClock(e.currentTime)} / ${fmtClock(e.durationSec)} · ${fmtClock(remain)} left</div>
-        <div class="progress-bar"><div class="progress-fill" style="width:${pct.toFixed(1)}%"></div></div>
+        <div class="progress-bar"><div class="progress-fill" data-pct="${pct.toFixed(1)}"></div></div>
       </div>
       ${favBtnHtml(e.audioUrl)}
       <button class="add-btn" data-act="remove-in-progress" data-idx="${i}" title="Remove"><span class="mi">close</span></button>
@@ -679,11 +890,30 @@ function inProgressRow (e, i) {
   `
 }
 
+const AUTO_ADVANCE_MODES = [
+  { id: 'newer', label: 'Play next-newer episode (chronological)' },
+  { id: 'older', label: 'Play next-older episode (reverse chronological)' },
+  { id: 'sort',  label: "Follow the podcast view's current sort" },
+  { id: 'off',   label: 'Stop after the episode ends' }
+]
+
 function renderSettings () {
   const user = state.store.discoverBlacklist || []
   const defaults = state.blacklistDefaults
+  const advanceMode = state.store.settings?.podcastAutoAdvance || 'newer'
+  const advanceOptions = AUTO_ADVANCE_MODES.map(m =>
+    `<option value="${m.id}"${m.id === advanceMode ? ' selected' : ''}>${escapeHtml(m.label)}</option>`
+  ).join('')
   els.view.innerHTML = `
     <div class="view-header"><h1>Settings</h1></div>
+    <section class="settings-section">
+      <h2>Playback</h2>
+      <label class="settings-row">
+        <span class="settings-label">When a podcast episode ends</span>
+        <select id="auto-advance-select">${advanceOptions}</select>
+      </label>
+      <p class="settings-help">Applies when you start playback from a podcast's episode list. Playlists always advance to the next item.</p>
+    </section>
     <section class="settings-section">
       <h2>Discover blacklist</h2>
       <p class="settings-help">Podcasts whose title or author contains any of these keywords (case-insensitive) are hidden from Discover.</p>
@@ -705,6 +935,12 @@ function renderSettings () {
       </form>
     </section>
   `
+  const advSel = document.getElementById('auto-advance-select')
+  advSel.addEventListener('change', async () => {
+    state.store.settings ||= {}
+    state.store.settings.podcastAutoAdvance = advSel.value
+    await persist()
+  })
   const form = document.getElementById('bl-form')
   const input = document.getElementById('bl-input')
   form.addEventListener('submit', async (e) => {
@@ -781,6 +1017,7 @@ function playEpisode (episode, source = null) {
   }
   els.audio.src = episode.audioUrl
   els.audio.play().catch(() => {})
+  updateMediaSession(episode)
   els.npTitle.textContent = episode.title || 'Untitled'
   els.npPodcast.textContent = episode.podcastTitle || ''
   els.pcPlay.disabled = false
@@ -802,6 +1039,11 @@ function fmtClock (s) {
 }
 
 function setPlayBtn () {
+  if (state.player.loading) {
+    els.pcPlay.innerHTML = `<span class="mi">progress_activity</span>`
+    els.pcPlay.title = 'Loading…'
+    return
+  }
   const playing = !els.audio.paused && !els.audio.ended && els.audio.currentSrc
   els.pcPlay.innerHTML = `<span class="mi mi-fill">${playing ? 'pause' : 'play_arrow'}</span>`
   els.pcPlay.title = playing ? 'Pause' : 'Play'
@@ -854,8 +1096,14 @@ els.pcVol.addEventListener('input', () => {
   setMuteBtn()
 })
 
-els.audio.addEventListener('play', setPlayBtn)
-els.audio.addEventListener('pause', setPlayBtn)
+els.audio.addEventListener('play', () => {
+  setPlayBtn()
+  if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing'
+})
+els.audio.addEventListener('pause', () => {
+  setPlayBtn()
+  if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused'
+})
 els.audio.addEventListener('loadedmetadata', () => {
   els.pcDur.textContent = fmtClock(els.audio.duration)
 })
@@ -867,6 +1115,23 @@ els.audio.addEventListener('timeupdate', () => {
   }
 })
 els.audio.addEventListener('volumechange', setMuteBtn)
+
+function setPlayLoading (loading) {
+  state.player.loading = loading
+  els.pcPlay.classList.toggle('loading', loading)
+  setPlayBtn()
+  document.querySelectorAll('.play-btn.playing').forEach(b => {
+    b.classList.toggle('loading', loading)
+    const mi = b.querySelector('.mi')
+    if (mi) mi.textContent = loading ? 'progress_activity' : 'play_arrow'
+  })
+}
+
+els.audio.addEventListener('loadstart', () => setPlayLoading(true))
+els.audio.addEventListener('waiting', () => setPlayLoading(true))
+els.audio.addEventListener('canplay', () => setPlayLoading(false))
+els.audio.addEventListener('playing', () => setPlayLoading(false))
+els.audio.addEventListener('error', () => setPlayLoading(false))
 
 // ------- In-progress tracking -------
 
@@ -933,16 +1198,53 @@ window.addEventListener('beforeunload', () => recordProgress({ immediate: true }
 
 els.audio.addEventListener('ended', () => {
   const src = state.player.source
-  if (!src || src.kind !== 'playlist') return
-  const pl = state.store.playlists.find(p => p.id === src.playlistId)
-  if (!pl) return
-  const next = src.index + 1
-  if (next >= pl.items.length) {
-    state.player.source = null
+  if (!src) return
+  if (src.kind === 'playlist') {
+    const pl = state.store.playlists.find(p => p.id === src.playlistId)
+    if (!pl) return
+    const next = src.index + 1
+    if (next >= pl.items.length) {
+      state.player.source = null
+      return
+    }
+    playEpisode(pl.items[next], { kind: 'playlist', playlistId: pl.id, index: next })
     return
   }
-  playEpisode(pl.items[next], { kind: 'playlist', playlistId: pl.id, index: next })
+  if (src.kind === 'podcast') {
+    const mode = state.store.settings?.podcastAutoAdvance || 'newer'
+    if (mode === 'off') { state.player.source = null; return }
+    const feed = state.episodeCache.get(src.feedUrl)
+    const cur = state.player.episode
+    if (!feed || !cur) { state.player.source = null; return }
+    const next = findNextPodcastEpisode(feed, cur, mode)
+    if (!next) { state.player.source = null; return }
+    playEpisode({
+      ...next,
+      feedUrl: src.feedUrl,
+      podcastTitle: feed.title,
+      podcastImage: feed.imageUrl
+    }, { kind: 'podcast', feedUrl: src.feedUrl })
+  }
 })
+
+function findNextPodcastEpisode (feed, cur, mode) {
+  const playable = feed.episodes.filter(e => e.audioUrl && !isSkipped(e.audioUrl))
+  if (mode === 'sort') {
+    const sorted = sortEpisodes(playable, state.podcastSort)
+    const i = sorted.findIndex(({ ep }) => ep.audioUrl === cur.audioUrl)
+    if (i < 0 || i + 1 >= sorted.length) return null
+    return sorted[i + 1].ep
+  }
+  const curT = new Date(cur.pubDate || 0).getTime()
+  if (mode === 'older') {
+    return playable
+      .filter(e => new Date(e.pubDate || 0).getTime() < curT)
+      .sort((a, b) => new Date(b.pubDate || 0) - new Date(a.pubDate || 0))[0] || null
+  }
+  return playable
+    .filter(e => new Date(e.pubDate || 0).getTime() > curT)
+    .sort((a, b) => new Date(a.pubDate || 0) - new Date(b.pubDate || 0))[0] || null
+}
 
 // ------- Add to playlist -------
 
@@ -976,32 +1278,6 @@ async function addEpisodeToPlaylistFlow (item) {
   await persist()
 }
 
-// ------- Folder assignment -------
-
-async function pickFolderFor (feedUrl) {
-  const sub = state.store.subscriptions.find(s => s.feedUrl === feedUrl)
-  if (!sub) return
-  const choice = await pickFromList(
-    `Move "${sub.title}" to folder`,
-    [
-      { id: '__none__', label: '(no folder)' },
-      ...state.store.folders.map(f => ({ id: f.id, label: f.name }))
-    ],
-    { label: '+ New folder…', prompt: 'New folder name' }
-  )
-  if (!choice) return
-  if (choice.newName) {
-    const f = { id: uid(), name: choice.newName }
-    state.store.folders.push(f)
-    sub.folderId = f.id
-  } else if (choice.id === '__none__') {
-    sub.folderId = null
-  } else {
-    sub.folderId = choice.id
-  }
-  await persist()
-  renderView()
-}
 
 // ------- Event wiring -------
 
@@ -1124,9 +1400,14 @@ els.view.addEventListener('click', async e => {
   if (actBtn) {
     const act = actBtn.dataset.act
     if (act === 'back') { goBack(); return }
-    if (act === 'pick-folder') {
+    if (act === 'card-menu') {
       e.stopPropagation()
-      await pickFolderFor(actBtn.dataset.feed)
+      openCardMenu(actBtn, actBtn.dataset.feed)
+      return
+    }
+    if (act === 'ep-menu') {
+      e.stopPropagation()
+      await openEpisodeMenu(actBtn)
       return
     }
     if (act === 'refresh-all') { await refreshAll(); return }
@@ -1200,17 +1481,7 @@ els.view.addEventListener('click', async e => {
         feedUrl: v.feedUrl,
         podcastTitle: v.feed.title,
         podcastImage: v.feed.imageUrl
-      })
-      return
-    }
-    if (act === 'add-to-playlist' && v.kind === 'podcast') {
-      const ep = v.feed.episodes[parseInt(actBtn.dataset.idx, 10)]
-      await addEpisodeToPlaylistFlow({
-        ...ep,
-        feedUrl: v.feedUrl,
-        podcastTitle: v.feed.title,
-        podcastImage: v.feed.imageUrl
-      })
+      }, { kind: 'podcast', feedUrl: v.feedUrl })
       return
     }
     if (act === 'play-in-progress' && v.kind === 'in-progress') {
@@ -1228,11 +1499,6 @@ els.view.addEventListener('click', async e => {
     if (act === 'play-incoming' && v.kind === 'incoming') {
       const ep = allCachedEpisodes()[parseInt(actBtn.dataset.idx, 10)]
       if (ep) playEpisode(ep)
-      return
-    }
-    if (act === 'add-incoming' && v.kind === 'incoming') {
-      const ep = allCachedEpisodes()[parseInt(actBtn.dataset.idx, 10)]
-      if (ep) await addEpisodeToPlaylistFlow(ep)
       return
     }
     if (v.kind === 'playlist') {
@@ -1263,7 +1529,11 @@ els.view.addEventListener('click', async e => {
       imageUrl: card.querySelector('img')?.getAttribute('src') || ''
     }
     openFeed(card.dataset.feed, hint)
+    return
   }
+
+  const epRow = e.target.closest('.episode[data-context][data-idx]')
+  if (epRow) handleEpisodeSelectClick(epRow, e)
 })
 
 // ------- Drag & Drop -------
@@ -1396,18 +1666,112 @@ function flashSidebarRow (row) {
 
 document.body.classList.add(`platform-${window.platform || 'unknown'}`)
 
+function isTypingTarget (el) {
+  if (!el) return false
+  const tag = el.tagName
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true
+  return !!el.isContentEditable
+}
+
+function togglePlayPause () {
+  if (!els.audio.currentSrc) return
+  if (els.audio.paused) els.audio.play().catch(() => {})
+  else els.audio.pause()
+}
+
 window.addEventListener('keydown', (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key === '[') {
     e.preventDefault()
     goBack()
+    return
+  }
+  if ((e.code === 'Space' || e.key === ' ') && !isTypingTarget(e.target)) {
+    if (!els.audio.currentSrc) return
+    e.preventDefault()
+    togglePlayPause()
+    return
+  }
+  if (e.key === 'MediaPlayPause') { e.preventDefault(); togglePlayPause(); return }
+  if (e.key === 'MediaStop') { e.preventDefault(); els.audio.pause(); return }
+  if (e.key === 'MediaTrackNext') {
+    e.preventDefault()
+    if (els.audio.currentSrc) els.audio.currentTime = els.audio.currentTime + 30
+    return
+  }
+  if (e.key === 'MediaTrackPrevious') {
+    e.preventDefault()
+    if (els.audio.currentSrc) els.audio.currentTime = Math.max(0, els.audio.currentTime - 15)
   }
 })
+
+function updateMediaSession (episode) {
+  if (!('mediaSession' in navigator)) return
+  try {
+    navigator.mediaSession.metadata = new window.MediaMetadata({
+      title: episode.title || 'Untitled',
+      artist: episode.podcastTitle || '',
+      artwork: episode.podcastImage ? [{ src: episode.podcastImage, sizes: '512x512' }] : []
+    })
+  } catch {}
+  const set = (action, handler) => {
+    try { navigator.mediaSession.setActionHandler(action, handler) } catch {}
+  }
+  set('play', () => els.audio.play().catch(() => {}))
+  set('pause', () => els.audio.pause())
+  set('stop', () => els.audio.pause())
+  set('seekbackward', (d) => {
+    const off = (d && d.seekOffset) || 15
+    els.audio.currentTime = Math.max(0, els.audio.currentTime - off)
+  })
+  set('seekforward', (d) => {
+    const off = (d && d.seekOffset) || 30
+    els.audio.currentTime = els.audio.currentTime + off
+  })
+  set('seekto', (d) => {
+    if (d && typeof d.seekTime === 'number') els.audio.currentTime = d.seekTime
+  })
+}
+
+els.selBar.addEventListener('click', async (e) => {
+  const btn = e.target.closest('button[data-act]')
+  if (!btn) return
+  const act = btn.dataset.act
+  if (act === 'sel-clear') {
+    clearSelection()
+    updateSelectionBar()
+    renderView()
+  } else if (act === 'sel-add-playlist') {
+    await bulkAddToPlaylist(resolveSelectionEpisodes())
+  } else if (act === 'sel-skip') {
+    await bulkSkip(resolveSelectionEpisodes())
+  }
+})
+
+async function bulkSkip (episodes) {
+  const urls = episodes.map(e => e.audioUrl).filter(Boolean)
+  if (!urls.length) return
+  const allSkipped = urls.every(u => isSkipped(u))
+  state.store.skippedEpisodes ||= []
+  if (allSkipped) {
+    state.store.skippedEpisodes = state.store.skippedEpisodes.filter(u => !urls.includes(u))
+  } else {
+    for (const u of urls) {
+      if (!state.store.skippedEpisodes.includes(u)) state.store.skippedEpisodes.push(u)
+    }
+  }
+  await persist()
+  clearSelection()
+  updateSelectionBar()
+  renderView()
+}
 
 ;(async () => {
   state.store = await window.api.getStore()
   try { state.blacklistDefaults = await window.api.getBlacklistDefaults() } catch {}
   renderSidebar()
   renderView()
+  measureSelectionBar()
+  window.addEventListener('resize', measureSelectionBar)
   refreshAll()
   setInterval(refreshAll, 30 * 60 * 1000)
 })()
