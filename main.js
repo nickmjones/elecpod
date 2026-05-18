@@ -3,6 +3,14 @@ const path = require('node:path')
 const fs = require('node:fs/promises')
 const Parser = require('rss-parser')
 
+if (!app.isPackaged) {
+  try {
+    require('electron-reloader')(module, {
+      ignore: ['store.json', 'node_modules/**', '.git/**']
+    })
+  } catch {}
+}
+
 app.disableHardwareAcceleration()
 app.commandLine.appendSwitch('disable-features', 'VaapiVideoDecoder,VaapiVideoEncoder')
 
@@ -42,6 +50,8 @@ async function loadStore () {
   store.subscriptions ||= []
   store.folders ||= []
   store.playlists ||= []
+  store.discoverBlacklist ||= []
+  store.inProgress ||= []
   return store
 }
 
@@ -50,9 +60,15 @@ async function saveStore (store) {
 }
 
 function createWindow () {
+  const isMac = process.platform === 'darwin'
+  const isWin = process.platform === 'win32'
   const win = new BrowserWindow({
     width: 1100,
     height: 750,
+    backgroundColor: '#141414',
+    titleBarStyle: isMac ? 'hiddenInset' : (isWin ? 'hidden' : 'default'),
+    ...(isMac ? { trafficLightPosition: { x: 14, y: 14 } } : {}),
+    ...(isWin ? { titleBarOverlay: { color: '#1a1a1a', symbolColor: '#e6e6e6', height: 36 } } : {}),
     webPreferences: { preload: path.join(__dirname, 'preload.js') }
   })
   win.loadFile('index.html')
@@ -99,19 +115,24 @@ async function fetchFeedData (feedUrl) {
 
 ipcMain.handle('fetchFeed', (_e, feedUrl) => fetchFeedData(feedUrl))
 
-const DISCOVER_BLACKLIST = [
+const DISCOVER_BLACKLIST_DEFAULTS = [
   'joe rogan',
   'tucker carlson',
   'megyn kelly',
   'theo von'
 ]
 
-function isBlacklisted (p) {
+function isBlacklisted (p, terms) {
   const hay = `${p.collectionName || ''} ${p.artistName || ''}`.toLowerCase()
-  return DISCOVER_BLACKLIST.some(term => hay.includes(term))
+  return terms.some(term => term && hay.includes(term))
 }
 
 ipcMain.handle('discover', async (_e, opts = {}) => {
+  const store = await loadStore()
+  const terms = [
+    ...DISCOVER_BLACKLIST_DEFAULTS,
+    ...store.discoverBlacklist.map(t => String(t).toLowerCase())
+  ]
   const country = opts.country || 'us'
   const limit = Math.min(opts.limit || 50, 50)
   const chartRes = await fetch(`https://rss.applemarketingtools.com/api/v2/${country}/podcasts/top/${limit}/podcasts.json`)
@@ -125,7 +146,7 @@ ipcMain.handle('discover', async (_e, opts = {}) => {
   const byId = new Map((lookup.results || []).map(r => [String(r.collectionId), r]))
   return ids
     .map(id => byId.get(String(id)))
-    .filter(p => p && p.feedUrl && !isBlacklisted(p))
+    .filter(p => p && p.feedUrl && !isBlacklisted(p, terms))
     .map(p => ({
       feedUrl: p.feedUrl,
       title: p.collectionName,
@@ -151,6 +172,7 @@ ipcMain.handle('refreshFeeds', async (_e, feedUrls) => {
   return results
 })
 
+ipcMain.handle('getBlacklistDefaults', () => DISCOVER_BLACKLIST_DEFAULTS.slice())
 ipcMain.handle('getStore', () => loadStore())
 ipcMain.handle('saveStore', async (_e, store) => {
   await saveStore(store)

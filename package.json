@@ -10,9 +10,11 @@
   "author": "nickmjones",
   "license": "ISC",
   "devDependencies": {
-    "electron": "^42.1.0"
+    "electron": "^42.1.0",
+    "electron-reloader": "^1.2.3"
   },
   "dependencies": {
+    "material-symbols": "^0.44.8",
     "rss-parser": "^3.13.0"
   }
 }

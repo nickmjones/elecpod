@@ -7,6 +7,7 @@
       content="default-src 'self'; img-src 'self' https: data:; media-src 'self' https:; script-src 'self'; style-src 'self'; connect-src 'self'"
     />
     <title>elecpod</title>
+    <link rel="stylesheet" href="./node_modules/material-symbols/outlined.css" />
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
@@ -16,30 +17,32 @@
           <input id="search-input" type="search" placeholder="Search podcasts…" />
         </div>
         <nav id="sidebar-nav">
-          <div class="nav-item" data-view="podcasts">Podcasts</div>
+          <div class="nav-item" data-view="podcasts"><span class="mi nav-icon">podcasts</span>Podcasts</div>
           <div class="nav-item" data-view="incoming">
-            <span>Incoming</span>
-            <button id="refresh-btn" title="Refresh feeds">↻</button>
+            <span class="mi nav-icon">inbox</span>Incoming
+            <button id="refresh-btn" title="Refresh feeds"><span class="mi">refresh</span></button>
           </div>
-          <div class="nav-item" data-view="discover">Discover</div>
-          <div class="nav-divider"></div>
+          <div class="nav-item" data-view="discover"><span class="mi nav-icon">explore</span>Discover</div>
+          <div class="nav-item" data-view="in-progress"><span class="mi nav-icon">history</span>In Progress</div>
           <div class="section-head">
             <span>Folders</span>
             <span class="head-actions">
-              <button id="add-url-btn" title="Add podcast by feed URL">+ url</button>
-              <button id="new-folder-btn" title="New folder">+</button>
+              <button id="add-url-btn" title="Add podcast by feed URL"><span class="mi">link</span></button>
+              <button id="new-folder-btn" title="New folder"><span class="mi">add</span></button>
             </span>
           </div>
           <div id="folders-list"></div>
-          <div class="nav-divider"></div>
           <div class="section-head">
             <span>Playlists</span>
             <span class="head-actions">
-              <button id="new-playlist-btn" title="New playlist">+</button>
+              <button id="new-playlist-btn" title="New playlist"><span class="mi">add</span></button>
             </span>
           </div>
           <div id="playlists-list"></div>
         </nav>
+        <div class="sidebar-footer">
+          <div class="nav-item" data-view="settings"><span class="mi nav-icon-muted">settings</span>Settings</div>
+        </div>
       </aside>
       <main id="main">
         <div id="view"></div>
@@ -50,7 +53,25 @@
         <div id="np-title">Nothing playing</div>
         <div id="np-podcast"></div>
       </div>
-      <audio id="audio" controls preload="none"></audio>
+      <div id="player-controls">
+        <button id="pc-skip-back" class="pc-btn" title="Back 15s" disabled><span class="mi">replay</span></button>
+        <button id="pc-play" class="pc-btn pc-play" title="Play" disabled><span class="mi mi-fill">play_arrow</span></button>
+        <button id="pc-skip-fwd" class="pc-btn" title="Forward 30s" disabled><span class="mi">forward_30</span></button>
+        <span id="pc-cur" class="pc-time">0:00</span>
+        <input id="pc-seek" class="pc-range" type="range" min="0" max="1000" value="0" step="1" disabled />
+        <span id="pc-dur" class="pc-time">0:00</span>
+        <select id="pc-rate" class="pc-rate" title="Playback speed">
+          <option value="0.75">0.75×</option>
+          <option value="1" selected>1×</option>
+          <option value="1.25">1.25×</option>
+          <option value="1.5">1.5×</option>
+          <option value="1.75">1.75×</option>
+          <option value="2">2×</option>
+        </select>
+        <button id="pc-mute" class="pc-btn" title="Mute"><span class="mi">volume_up</span></button>
+        <input id="pc-vol" class="pc-range pc-vol" type="range" min="0" max="1" step="0.01" value="1" />
+      </div>
+      <audio id="audio" preload="none"></audio>
     </footer>
     <script src="./renderer.js"></script>
   </body>

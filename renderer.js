@@ -6,7 +6,8 @@ const state = {
   searchDebounce: null,
   refreshing: false,
   incomingFilter: '7d',
-  discoverCache: null
+  discoverCache: null,
+  blacklistDefaults: []
 }
 
 let currentDrag = null
@@ -21,7 +22,7 @@ const INCOMING_FILTERS = [
 
 const els = {
   search: document.getElementById('search-input'),
-  nav: document.getElementById('sidebar-nav'),
+  nav: document.getElementById('sidebar'),
   foldersList: document.getElementById('folders-list'),
   playlistsList: document.getElementById('playlists-list'),
   newFolder: document.getElementById('new-folder-btn'),
@@ -31,7 +32,16 @@ const els = {
   view: document.getElementById('view'),
   audio: document.getElementById('audio'),
   npTitle: document.getElementById('np-title'),
-  npPodcast: document.getElementById('np-podcast')
+  npPodcast: document.getElementById('np-podcast'),
+  pcPlay: document.getElementById('pc-play'),
+  pcSkipBack: document.getElementById('pc-skip-back'),
+  pcSkipFwd: document.getElementById('pc-skip-fwd'),
+  pcSeek: document.getElementById('pc-seek'),
+  pcCur: document.getElementById('pc-cur'),
+  pcDur: document.getElementById('pc-dur'),
+  pcRate: document.getElementById('pc-rate'),
+  pcMute: document.getElementById('pc-mute'),
+  pcVol: document.getElementById('pc-vol')
 }
 
 const uid = () => Math.random().toString(36).slice(2, 10)
@@ -167,8 +177,8 @@ function renderSidebar () {
     <div class="nav-row${v.kind === 'folder' && v.folderId === f.id ? ' active' : ''}" data-folder="${f.id}">
       <span class="row-label">${escapeHtml(f.name)}</span>
       <span class="row-actions">
-        <button data-act="rename-folder" data-id="${f.id}" title="Rename">✎</button>
-        <button data-act="delete-folder" data-id="${f.id}" title="Delete">✕</button>
+        <button data-act="rename-folder" data-id="${f.id}" title="Rename"><span class="mi">edit</span></button>
+        <button data-act="delete-folder" data-id="${f.id}" title="Delete"><span class="mi">close</span></button>
       </span>
     </div>
   `).join('') || '<div class="muted-empty">No folders</div>'
@@ -177,8 +187,8 @@ function renderSidebar () {
     <div class="nav-row${v.kind === 'playlist' && v.playlistId === p.id ? ' active' : ''}" data-playlist="${p.id}">
       <span class="row-label">${escapeHtml(p.name)} <span style="color:#666;font-size:11px">(${p.items.length})</span></span>
       <span class="row-actions">
-        <button data-act="rename-playlist" data-id="${p.id}" title="Rename">✎</button>
-        <button data-act="delete-playlist" data-id="${p.id}" title="Delete">✕</button>
+        <button data-act="rename-playlist" data-id="${p.id}" title="Rename"><span class="mi">edit</span></button>
+        <button data-act="delete-playlist" data-id="${p.id}" title="Delete"><span class="mi">close</span></button>
       </span>
     </div>
   `).join('') || '<div class="muted-empty">No playlists</div>'
@@ -197,6 +207,8 @@ function renderView () {
     }
     case 'incoming': return renderIncoming()
     case 'discover': return renderDiscover()
+    case 'in-progress': return renderInProgress()
+    case 'settings': return renderSettings()
     case 'playlist': return renderPlaylistView(v.playlistId)
     case 'podcast': return renderPodcast(v)
     case 'search': return renderSearch(v.term, v.results)
@@ -219,7 +231,7 @@ function renderPodcastsGallery (subs, title) {
     <div class="gallery">
       ${subs.map(s => `
         <div class="gallery-card" draggable="true" data-drag="sub" data-feed="${escapeHtml(s.feedUrl)}">
-          <button class="folder-pick" data-act="pick-folder" data-feed="${escapeHtml(s.feedUrl)}" title="Move to folder">⋯</button>
+          <button class="folder-pick" data-act="pick-folder" data-feed="${escapeHtml(s.feedUrl)}" title="Move to folder"><span class="mi">more_horiz</span></button>
           <img src="${escapeHtml(s.imageUrl || '')}" alt="" />
           <div class="title">${escapeHtml(s.title)}</div>
         </div>
@@ -282,14 +294,14 @@ function incomingRow (e, i) {
   const playing = state.player.episode?.audioUrl === e.audioUrl
   return `
     <div class="episode" draggable="true" data-drag="ep" data-context="incoming" data-idx="${i}">
-      <button class="play-btn${playing ? ' playing' : ''}" data-act="play-incoming" data-idx="${i}">▶</button>
+      <button class="play-btn${playing ? ' playing' : ''}" data-act="play-incoming" data-idx="${i}"><span class="mi mi-fill">play_arrow</span></button>
       <div class="episode-info">
         <div class="ep-podcast">${escapeHtml(e.podcastTitle || '')}</div>
         <div class="title">${escapeHtml(e.title || 'Untitled')}</div>
         <div class="meta">${fmtDate(e.pubDate)}${e.duration ? ' · ' + escapeHtml(fmtDuration(e.duration)) : ''}</div>
         <div class="desc">${escapeHtml(e.description)}</div>
       </div>
-      <button class="add-btn" data-act="add-incoming" data-idx="${i}" title="Add to playlist">+</button>
+      <button class="add-btn" data-act="add-incoming" data-idx="${i}" title="Add to playlist"><span class="mi">add</span></button>
     </div>
   `
 }
@@ -322,13 +334,13 @@ function episodeRow (e, i) {
   const playing = state.player.episode?.audioUrl === e.audioUrl
   return `
     <div class="episode" draggable="true" data-drag="ep" data-context="podcast" data-idx="${i}">
-      <button class="play-btn${playing ? ' playing' : ''}" data-act="play" data-idx="${i}">▶</button>
+      <button class="play-btn${playing ? ' playing' : ''}" data-act="play" data-idx="${i}"><span class="mi mi-fill">play_arrow</span></button>
       <div class="episode-info">
         <div class="title">${escapeHtml(e.title || 'Untitled')}</div>
         <div class="meta">${fmtDate(e.pubDate)}${e.duration ? ' · ' + escapeHtml(fmtDuration(e.duration)) : ''}</div>
         <div class="desc">${escapeHtml(e.description)}</div>
       </div>
-      <button class="add-btn" data-act="add-to-playlist" data-idx="${i}" title="Add to playlist">+</button>
+      <button class="add-btn" data-act="add-to-playlist" data-idx="${i}" title="Add to playlist"><span class="mi">add</span></button>
     </div>
   `
 }
@@ -361,10 +373,10 @@ function playlistRow (item, i, playing, playlistId) {
         <div class="pod">${escapeHtml(item.podcastTitle || '')}</div>
       </div>
       <div class="ctrls">
-        <button data-act="pl-play" data-idx="${i}" title="Play">▶</button>
-        <button data-act="pl-up" data-idx="${i}" title="Move up">↑</button>
-        <button data-act="pl-down" data-idx="${i}" title="Move down">↓</button>
-        <button data-act="pl-remove" data-idx="${i}" title="Remove">✕</button>
+        <button data-act="pl-play" data-idx="${i}" title="Play"><span class="mi mi-fill">play_arrow</span></button>
+        <button data-act="pl-up" data-idx="${i}" title="Move up"><span class="mi">arrow_upward</span></button>
+        <button data-act="pl-down" data-idx="${i}" title="Move down"><span class="mi">arrow_downward</span></button>
+        <button data-act="pl-remove" data-idx="${i}" title="Remove"><span class="mi">close</span></button>
       </div>
     </div>
   `
@@ -400,12 +412,91 @@ function searchCardHtml (r, subbed) {
   const isSubbed = subbed.has(r.feedUrl)
   return `
     <div class="gallery-card" data-feed="${escapeHtml(r.feedUrl)}">
-      <button class="subscribe-btn${isSubbed ? ' subscribed' : ''}" data-act="toggle-sub" data-feed="${escapeHtml(r.feedUrl)}" data-title="${escapeHtml(r.title)}" data-img="${escapeHtml(r.imageUrl || '')}" title="${isSubbed ? 'Unsubscribe' : 'Subscribe'}">${isSubbed ? '✓' : '+'}</button>
+      <button class="subscribe-btn${isSubbed ? ' subscribed' : ''}" data-act="toggle-sub" data-feed="${escapeHtml(r.feedUrl)}" data-title="${escapeHtml(r.title)}" data-img="${escapeHtml(r.imageUrl || '')}" title="${isSubbed ? 'Unsubscribe' : 'Subscribe'}"><span class="mi">${isSubbed ? 'check' : 'add'}</span></button>
       <img src="${escapeHtml(r.imageUrl || '')}" alt="" />
       <div class="title">${escapeHtml(r.title)}</div>
       ${r.artist ? `<div class="artist">${escapeHtml(r.artist)}</div>` : ''}
     </div>
   `
+}
+
+function renderInProgress () {
+  const items = (state.store.inProgress || [])
+    .slice()
+    .sort((a, b) => (b.lastPlayedAt || 0) - (a.lastPlayedAt || 0))
+  if (!items.length) {
+    els.view.innerHTML = `
+      <div class="view-header"><h1>In Progress</h1></div>
+      <div class="empty-state">Nothing in progress. Start playing an episode and pause it — it'll show up here.</div>
+    `
+    return
+  }
+  els.view.innerHTML = `
+    <div class="view-header"><h1>In Progress</h1></div>
+    <div class="episodes">
+      ${items.map((e, i) => inProgressRow(e, i)).join('')}
+    </div>
+  `
+}
+
+function inProgressRow (e, i) {
+  const playing = state.player.episode?.audioUrl === e.audioUrl
+  const pct = e.durationSec > 0 ? Math.max(0, Math.min(100, (e.currentTime / e.durationSec) * 100)) : 0
+  const remain = Math.max(0, (e.durationSec || 0) - (e.currentTime || 0))
+  return `
+    <div class="episode">
+      <button class="play-btn${playing ? ' playing' : ''}" data-act="play-in-progress" data-idx="${i}"><span class="mi mi-fill">play_arrow</span></button>
+      <div class="episode-info">
+        <div class="ep-podcast">${escapeHtml(e.podcastTitle || '')}</div>
+        <div class="title">${escapeHtml(e.title || 'Untitled')}</div>
+        <div class="meta">${fmtDate(e.pubDate)} · ${fmtClock(e.currentTime)} / ${fmtClock(e.durationSec)} · ${fmtClock(remain)} left</div>
+        <div class="progress-bar"><div class="progress-fill" style="width:${pct.toFixed(1)}%"></div></div>
+      </div>
+      <button class="add-btn" data-act="remove-in-progress" data-idx="${i}" title="Remove"><span class="mi">close</span></button>
+    </div>
+  `
+}
+
+function renderSettings () {
+  const user = state.store.discoverBlacklist || []
+  const defaults = state.blacklistDefaults
+  els.view.innerHTML = `
+    <div class="view-header"><h1>Settings</h1></div>
+    <section class="settings-section">
+      <h2>Discover blacklist</h2>
+      <p class="settings-help">Podcasts whose title or author contains any of these keywords (case-insensitive) are hidden from Discover.</p>
+      <h3>Built-in</h3>
+      <div class="blacklist-tags">
+        ${defaults.length
+          ? defaults.map(t => `<span class="tag tag-locked">${escapeHtml(t)}</span>`).join('')
+          : '<div class="muted-empty">None</div>'}
+      </div>
+      <h3>Your keywords</h3>
+      <div class="blacklist-tags">
+        ${user.length
+          ? user.map((t, i) => `<span class="tag">${escapeHtml(t)}<button data-act="bl-remove" data-idx="${i}" title="Remove"><span class="mi">close</span></button></span>`).join('')
+          : '<div class="muted-empty">No custom keywords yet.</div>'}
+      </div>
+      <form class="blacklist-form" id="bl-form">
+        <input type="text" id="bl-input" placeholder="Add keyword (e.g. crypto)" />
+        <button type="submit" class="primary">Add</button>
+      </form>
+    </section>
+  `
+  const form = document.getElementById('bl-form')
+  const input = document.getElementById('bl-input')
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault()
+    const term = input.value.trim().toLowerCase()
+    if (!term) return
+    state.store.discoverBlacklist ||= []
+    if (!state.store.discoverBlacklist.includes(term)) {
+      state.store.discoverBlacklist.push(term)
+      state.discoverCache = null
+      await persist()
+    }
+    renderSettings()
+  })
 }
 
 function renderSearch (term, results) {
@@ -456,12 +547,166 @@ async function refreshAll () {
 function playEpisode (episode, source = null) {
   state.player.episode = episode
   state.player.source = source
+  const saved = findProgress(episode.audioUrl)
+  const resumeAt = episode._resumeAt ?? (saved ? saved.currentTime : null)
+  if (resumeAt && resumeAt > 0) {
+    const onLoad = () => {
+      els.audio.currentTime = resumeAt
+      els.audio.removeEventListener('loadedmetadata', onLoad)
+    }
+    els.audio.addEventListener('loadedmetadata', onLoad)
+  }
   els.audio.src = episode.audioUrl
   els.audio.play().catch(() => {})
   els.npTitle.textContent = episode.title || 'Untitled'
   els.npPodcast.textContent = episode.podcastTitle || ''
+  els.pcPlay.disabled = false
+  els.pcSkipBack.disabled = false
+  els.pcSkipFwd.disabled = false
+  els.pcSeek.disabled = false
   renderView()
 }
+
+// ------- Custom player controls -------
+
+function fmtClock (s) {
+  if (!isFinite(s) || s < 0) return '0:00'
+  const n = Math.floor(s)
+  const h = Math.floor(n / 3600)
+  const m = Math.floor((n % 3600) / 60)
+  const sec = String(n % 60).padStart(2, '0')
+  return h ? `${h}:${String(m).padStart(2, '0')}:${sec}` : `${m}:${sec}`
+}
+
+function setPlayBtn () {
+  const playing = !els.audio.paused && !els.audio.ended && els.audio.currentSrc
+  els.pcPlay.innerHTML = `<span class="mi mi-fill">${playing ? 'pause' : 'play_arrow'}</span>`
+  els.pcPlay.title = playing ? 'Pause' : 'Play'
+}
+
+function setMuteBtn () {
+  const muted = els.audio.muted || els.audio.volume === 0
+  els.pcMute.innerHTML = `<span class="mi">${muted ? 'volume_off' : 'volume_up'}</span>`
+}
+
+els.pcPlay.addEventListener('click', () => {
+  if (!els.audio.currentSrc) return
+  if (els.audio.paused) els.audio.play().catch(() => {})
+  else els.audio.pause()
+})
+els.pcSkipBack.addEventListener('click', () => {
+  if (!els.audio.currentSrc) return
+  els.audio.currentTime = Math.max(0, els.audio.currentTime - 15)
+})
+els.pcSkipFwd.addEventListener('click', () => {
+  if (!els.audio.currentSrc) return
+  const d = isFinite(els.audio.duration) ? els.audio.duration : Infinity
+  els.audio.currentTime = Math.min(d, els.audio.currentTime + 30)
+})
+
+let seeking = false
+els.pcSeek.addEventListener('input', () => {
+  seeking = true
+  if (isFinite(els.audio.duration)) {
+    els.pcCur.textContent = fmtClock((els.pcSeek.value / 1000) * els.audio.duration)
+  }
+})
+els.pcSeek.addEventListener('change', () => {
+  if (isFinite(els.audio.duration)) {
+    els.audio.currentTime = (els.pcSeek.value / 1000) * els.audio.duration
+  }
+  seeking = false
+})
+
+els.pcRate.addEventListener('change', () => {
+  els.audio.playbackRate = parseFloat(els.pcRate.value)
+})
+els.pcMute.addEventListener('click', () => {
+  els.audio.muted = !els.audio.muted
+  setMuteBtn()
+})
+els.pcVol.addEventListener('input', () => {
+  els.audio.volume = parseFloat(els.pcVol.value)
+  if (els.audio.volume > 0) els.audio.muted = false
+  setMuteBtn()
+})
+
+els.audio.addEventListener('play', setPlayBtn)
+els.audio.addEventListener('pause', setPlayBtn)
+els.audio.addEventListener('loadedmetadata', () => {
+  els.pcDur.textContent = fmtClock(els.audio.duration)
+})
+els.audio.addEventListener('timeupdate', () => {
+  if (seeking) return
+  els.pcCur.textContent = fmtClock(els.audio.currentTime)
+  if (isFinite(els.audio.duration) && els.audio.duration > 0) {
+    els.pcSeek.value = String(Math.round((els.audio.currentTime / els.audio.duration) * 1000))
+  }
+})
+els.audio.addEventListener('volumechange', setMuteBtn)
+
+// ------- In-progress tracking -------
+
+let lastProgressSave = 0
+
+async function saveStoreSilently () {
+  state.store = await window.api.saveStore(state.store)
+}
+
+function findProgress (audioUrl) {
+  return (state.store.inProgress || []).find(x => x.audioUrl === audioUrl)
+}
+
+function removeProgress (audioUrl, { rerender = true } = {}) {
+  if (!state.store.inProgress) return
+  const before = state.store.inProgress.length
+  state.store.inProgress = state.store.inProgress.filter(x => x.audioUrl !== audioUrl)
+  if (state.store.inProgress.length !== before) {
+    saveStoreSilently()
+    if (rerender && state.view.kind === 'in-progress') renderView()
+  }
+}
+
+function recordProgress ({ immediate = false } = {}) {
+  const ep = state.player.episode
+  if (!ep || !ep.audioUrl) return
+  const now = Date.now()
+  if (!immediate && now - lastProgressSave < 5000) return
+  lastProgressSave = now
+  const cur = els.audio.currentTime
+  const dur = els.audio.duration
+  if (!isFinite(dur) || dur <= 0) return
+  if (cur < 5 || cur > dur - 30) {
+    removeProgress(ep.audioUrl)
+    return
+  }
+  state.store.inProgress ||= []
+  const rec = {
+    audioUrl: ep.audioUrl,
+    title: ep.title,
+    pubDate: ep.pubDate,
+    duration: ep.duration,
+    guid: ep.guid,
+    feedUrl: ep.feedUrl,
+    podcastTitle: ep.podcastTitle,
+    podcastImage: ep.podcastImage,
+    currentTime: cur,
+    durationSec: dur,
+    lastPlayedAt: now
+  }
+  const idx = state.store.inProgress.findIndex(x => x.audioUrl === ep.audioUrl)
+  if (idx >= 0) state.store.inProgress[idx] = rec
+  else state.store.inProgress.push(rec)
+  saveStoreSilently()
+  if (state.view.kind === 'in-progress') renderView()
+}
+
+els.audio.addEventListener('timeupdate', () => recordProgress())
+els.audio.addEventListener('pause', () => recordProgress({ immediate: true }))
+els.audio.addEventListener('ended', () => {
+  if (state.player.episode) removeProgress(state.player.episode.audioUrl)
+})
+window.addEventListener('beforeunload', () => recordProgress({ immediate: true }))
 
 els.audio.addEventListener('ended', () => {
   const src = state.player.source
@@ -658,6 +903,14 @@ els.view.addEventListener('click', async e => {
       return
     }
     if (act === 'refresh-all') { await refreshAll(); return }
+    if (act === 'bl-remove') {
+      const idx = parseInt(actBtn.dataset.idx, 10)
+      state.store.discoverBlacklist.splice(idx, 1)
+      state.discoverCache = null
+      await persist()
+      renderSettings()
+      return
+    }
     if (act === 'refresh-discover') {
       e.stopPropagation()
       state.discoverCache = null
@@ -718,6 +971,18 @@ els.view.addEventListener('click', async e => {
         podcastTitle: v.feed.title,
         podcastImage: v.feed.imageUrl
       })
+      return
+    }
+    if (act === 'play-in-progress' && v.kind === 'in-progress') {
+      const sorted = (state.store.inProgress || []).slice().sort((a, b) => (b.lastPlayedAt || 0) - (a.lastPlayedAt || 0))
+      const ep = sorted[parseInt(actBtn.dataset.idx, 10)]
+      if (ep) playEpisode(ep)
+      return
+    }
+    if (act === 'remove-in-progress' && v.kind === 'in-progress') {
+      const sorted = (state.store.inProgress || []).slice().sort((a, b) => (b.lastPlayedAt || 0) - (a.lastPlayedAt || 0))
+      const ep = sorted[parseInt(actBtn.dataset.idx, 10)]
+      if (ep) removeProgress(ep.audioUrl)
       return
     }
     if (act === 'play-incoming' && v.kind === 'incoming') {
@@ -885,8 +1150,11 @@ function flashSidebarRow (row) {
 
 // ------- Boot -------
 
+document.body.classList.add(`platform-${window.platform || 'unknown'}`)
+
 ;(async () => {
   state.store = await window.api.getStore()
+  try { state.blacklistDefaults = await window.api.getBlacklistDefaults() } catch {}
   renderSidebar()
   renderView()
   refreshAll()
