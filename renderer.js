@@ -83,7 +83,8 @@ const els = {
   pcMute: document.getElementById('pc-mute'),
   pcVol: document.getElementById('pc-vol'),
   selBar: document.getElementById('selection-bar'),
-  selCount: document.querySelector('#selection-bar .sel-count')
+  selCount: document.querySelector('#selection-bar .sel-count'),
+  scroll: document.getElementById('main-scroll')
 }
 
 const uid = () => Math.random().toString(36).slice(2, 10)
@@ -151,6 +152,7 @@ const ROOT_VIEWS = new Set(['podcasts', 'incoming', 'discover', 'in-progress', '
 
 function setView (view, { push = true } = {}) {
   if (push && state.view && state.view.kind && state.view.kind !== 'loading' && state.view.kind !== 'error') {
+    state.view._scroll = els.scroll ? els.scroll.scrollTop : 0
     state.viewHistory.push(state.view)
     if (state.viewHistory.length > 30) state.viewHistory.shift()
   }
@@ -159,6 +161,7 @@ function setView (view, { push = true } = {}) {
   updateSelectionBar()
   renderView()
   renderSidebar()
+  if (els.scroll) els.scroll.scrollTop = view._scroll || 0
 }
 
 function goBack () {
@@ -376,28 +379,26 @@ function handleEpisodeSelectClick (rowEl, e) {
   const ctx = rowEl.dataset.context
   const idx = parseInt(rowEl.dataset.idx, 10)
   if (!ctx || isNaN(idx)) return
-  const isRange = e.shiftKey && state.selection.context === ctx && state.selection.anchor != null
   const isToggle = e.metaKey || e.ctrlKey
-  if (!isRange && !isToggle) {
-    openEpisodePage(rowEl)
+  if (!e.shiftKey && !isToggle) {
+    if (e.target.closest('.ep-title-link')) openEpisodePage(rowEl)
     return
   }
   e.preventDefault()
   if (window.getSelection) try { window.getSelection().removeAllRanges() } catch {}
-  if (isRange) {
+  const hasAnchor = state.selection.context === ctx && state.selection.anchor != null
+  if (e.shiftKey && hasAnchor) {
     const a = state.selection.anchor
     const [lo, hi] = a < idx ? [a, idx] : [idx, a]
     const next = new Set(state.selection.indices)
     for (let i = lo; i <= hi; i++) next.add(i)
     state.selection.indices = next
+  } else if (isToggle && hasAnchor) {
+    if (state.selection.indices.has(idx)) state.selection.indices.delete(idx)
+    else state.selection.indices.add(idx)
+    state.selection.anchor = idx
   } else {
-    if (state.selection.context !== ctx) {
-      state.selection = { context: ctx, indices: new Set([idx]), anchor: idx }
-    } else {
-      if (state.selection.indices.has(idx)) state.selection.indices.delete(idx)
-      else state.selection.indices.add(idx)
-      state.selection.anchor = idx
-    }
+    state.selection = { context: ctx, indices: new Set([idx]), anchor: idx }
   }
   renderView()
   updateSelectionBar()
@@ -741,7 +742,7 @@ function incomingRow (e, i) {
       <button class="play-btn${playing ? ' playing' : ''}" data-act="play-incoming" data-idx="${i}"><span class="mi mi-fill">play_arrow</span></button>
       <div class="episode-info">
         <div class="ep-podcast">${escapeHtml(e.podcastTitle || '')}</div>
-        <div class="title">${escapeHtml(e.title || 'Untitled')}</div>
+        <div class="title"><span class="ep-title-link">${escapeHtml(e.title || 'Untitled')}</span></div>
         <div class="meta">${fmtDate(e.pubDate)}${e.duration ? ' · ' + escapeHtml(fmtDuration(e.duration)) : ''}</div>
         <div class="desc">${escapeHtml(e.description)}</div>
       </div>
@@ -832,7 +833,7 @@ function episodeRow (e, i) {
     <div class="episode${rowSelectedClass('podcast', i)}${skipped ? ' skipped' : ''}" draggable="true" data-drag="ep" data-context="podcast" data-idx="${i}">
       <button class="play-btn${playing ? ' playing' : ''}" data-act="play" data-idx="${i}"><span class="mi mi-fill">play_arrow</span></button>
       <div class="episode-info">
-        <div class="title">${escapeHtml(e.title || 'Untitled')}${skipped ? ' <span class="skip-tag">skipped</span>' : ''}</div>
+        <div class="title"><span class="ep-title-link">${escapeHtml(e.title || 'Untitled')}</span>${skipped ? ' <span class="skip-tag">skipped</span>' : ''}</div>
         <div class="meta">${fmtDate(e.pubDate)}${e.duration ? ' · ' + escapeHtml(fmtDuration(e.duration)) : ''}</div>
         <div class="desc">${escapeHtml(e.description)}</div>
       </div>
@@ -1040,7 +1041,7 @@ function favoriteRow (e, i) {
       <button class="play-btn${playing ? ' playing' : ''}" data-act="play-favorite" data-idx="${i}"><span class="mi mi-fill">play_arrow</span></button>
       <div class="episode-info">
         <div class="ep-podcast">${escapeHtml(e.podcastTitle || '')}</div>
-        <div class="title">${escapeHtml(e.title || 'Untitled')}</div>
+        <div class="title"><span class="ep-title-link">${escapeHtml(e.title || 'Untitled')}</span></div>
         <div class="meta">${fmtDate(e.pubDate)}${e.duration ? ' · ' + escapeHtml(fmtDuration(e.duration)) : ''}</div>
       </div>
       ${favBtnHtml(e.audioUrl)}
@@ -1079,7 +1080,7 @@ function inProgressRow (e, i) {
       <button class="play-btn${playing ? ' playing' : ''}" data-act="play-in-progress" data-idx="${i}"><span class="mi mi-fill">play_arrow</span></button>
       <div class="episode-info">
         <div class="ep-podcast">${escapeHtml(e.podcastTitle || '')}</div>
-        <div class="title">${escapeHtml(e.title || 'Untitled')}</div>
+        <div class="title"><span class="ep-title-link">${escapeHtml(e.title || 'Untitled')}</span></div>
         <div class="meta">${fmtDate(e.pubDate)} · ${fmtClock(e.currentTime)} / ${fmtClock(e.durationSec)} · ${fmtClock(remain)} left</div>
         <div class="progress-bar"><div class="progress-fill" data-pct="${pct.toFixed(1)}"></div></div>
       </div>
@@ -1374,6 +1375,8 @@ function playEpisode (episode, source = null) {
   els.pcSkipBack.disabled = false
   els.pcSkipFwd.disabled = false
   els.pcSeek.disabled = false
+  els.pcSeek.value = '0'
+  els.pcSeek.style.setProperty('--seek-pct', '0%')
   renderView()
 }
 
@@ -1419,6 +1422,7 @@ els.pcSkipFwd.addEventListener('click', () => {
 let seeking = false
 els.pcSeek.addEventListener('input', () => {
   seeking = true
+  els.pcSeek.style.setProperty('--seek-pct', (els.pcSeek.value / 10) + '%')
   if (isFinite(els.audio.duration)) {
     els.pcCur.textContent = fmtClock((els.pcSeek.value / 1000) * els.audio.duration)
   }
@@ -1455,7 +1459,9 @@ els.audio.addEventListener('timeupdate', () => {
   if (seeking) return
   els.pcCur.textContent = fmtClock(els.audio.currentTime)
   if (isFinite(els.audio.duration) && els.audio.duration > 0) {
-    els.pcSeek.value = String(Math.round((els.audio.currentTime / els.audio.duration) * 1000))
+    const pct = (els.audio.currentTime / els.audio.duration) * 100
+    els.pcSeek.value = String(Math.round(pct * 10))
+    els.pcSeek.style.setProperty('--seek-pct', pct + '%')
   }
 })
 els.audio.addEventListener('volumechange', setMuteBtn)

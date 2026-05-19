@@ -21,7 +21,14 @@
   - npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
   - npm warn deprecated boolean@3.2.0: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
 
-- [ ] New folder UX:
+- [x] New folder UX:
   - Click new folder button
   - New untitled folder appears in sidebar with text highlighted to type
   - User hits return and the folder is committed
+
+- [x] Bug: After visiting an episode detail view, the podcast index loses scroll position
+- [x] Issue: Restore bulk select by putting link to episode detail view on episode title only
+- [x] UX: Multi-select should only be possible through shift+click. Rows should not be selectable on their own. They shouls, however, ramain draggable.
+
+- [x] Chore: All colors consolidated and set as CSS vars
+- [x] Chore: Enable light/dark mode to match host OS
